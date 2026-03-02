@@ -61,36 +61,36 @@ def health():
         return {"status": "ok", "db": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/GetDeviceServices")
 def get_device_services():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT
                         name,
                         device_service_id,
                         device_service_name,
-                        is_active,
+                        is_check,
                         creation,
                         modified
                     FROM `tabDevice Services`
-                    WHERE is_active = 1
+                    WHERE IFNULL(is_check, 0) = 1
                     ORDER BY device_service_id
-                    """
-                )
-                data = cursor.fetchall()
+                """)
+                rows = cursor.fetchall()
 
         return {
             "success": True,
-            "count": len(data),
-            "data": data
+            "count": len(rows),
+            "data": rows
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "error": str(e)}
+
+
+
     # =================================================
 # 🔹 CUSTOMERS API (ALL CUSTOMERS)
 # =================================================
