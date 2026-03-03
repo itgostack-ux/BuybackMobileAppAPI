@@ -488,3 +488,189 @@ def get_models(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+    # =================================================
+# 🔹 GET CUSTOMER BY CH CUSTOMER ID
+# =================================================
+@app.get("/Customers/{ch_customer_id}")
+def get_customer_by_ch_id(ch_customer_id: str):
+    try:
+        ch_customer_id = ch_customer_id.strip()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        name AS customer_id,
+                        ch_customer_id,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        customer_type,
+                        customer_group,
+                        territory,
+                        creation,
+                        modified,
+                        disabled
+                    FROM `tabCustomer`
+                    WHERE TRIM(LOWER(ch_customer_id)) = TRIM(LOWER(%s))
+                    LIMIT 1
+                    """,
+                    (ch_customer_id,)
+                )
+                customer = cursor.fetchone()
+
+        if not customer:
+            raise HTTPException(status_code=404, detail="Customer not found")
+
+        return {
+            "success": True,
+            "data": customer
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+    # =================================================
+# 🔹 CREATE CUSTOMER (FULL VALIDATION)
+# =================================================
+from fastapi import Body, HTTPException
+import random
+import string
+from datetime import datetime
+
+
+def generate_ch_customer_id(length=8):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+
+@app.post("/Customers")
+def create_customer(payload: dict = Body(...)):
+    try:
+        # =================================================
+        # 🧹 INPUT CLEANING
+        # =================================================
+        customer_name = (payload.get("customer_name") or "").strip()
+        mobile_no = (payload.get("mobile_no") or "").strip()
+        email_id = (payload.get("email_id") or "").strip()
+        ch_customer_id = (payload.get("ch_customer_id") or "").strip()
+
+        if not customer_name:
+            raise HTTPException(status_code=400, detail="customer_name is required")
+
+        if not mobile_no:
+            raise HTTPException(status_code=400, detail="mobile_no is required")
+
+        # =================================================
+        # 🔤 NORMALIZATION
+        # =================================================
+        customer_name_clean = customer_name.title()   # Proper case
+        mobile_no_clean = mobile_no
+        email_id_clean = email_id.lower() if email_id else None
+
+        # auto-generate CH ID if missing
+        if not ch_customer_id:
+            ch_customer_id = generate_ch_customer_id()
+
+        ch_customer_id = ch_customer_id.upper()
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+
+                cursor.execute(
+                    """
+                    SELECT name FROM `tabCustomer`
+                    WHERE TRIM(mobile_no) = TRIM(%s)
+                    LIMIT 1
+                    """,
+                    (mobile_no_clean,)
+                )
+                if cursor.fetchone():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Customer already exists with this mobile number"
+                    )
+
+               
+
+                cursor.execute(
+                    """
+                    SELECT name FROM `tabCustomer`
+                    WHERE TRIM(LOWER(ch_customer_id)) = TRIM(LOWER(%s))
+                    LIMIT 1
+                    """,
+                    (ch_customer_id,)
+                )
+                if cursor.fetchone():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="ch_customer_id already exists"
+                    )
+
+
+                customer_id = customer_name_clean
+
+                # prevent duplicate name PK
+                cursor.execute(
+                    "SELECT name FROM `tabCustomer` WHERE name = %s LIMIT 1",
+                    (customer_id,)
+                )
+                if cursor.fetchone():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Customer name already exists"
+                    )
+
+        
+                now = datetime.utcnow()
+
+                cursor.execute(
+                    """
+                    INSERT INTO `tabCustomer`
+                    (
+                        name,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        customer_type,
+                        customer_group,
+                        territory,
+                        ch_customer_id,
+                        creation,
+                        modified,
+                        owner,
+                        modified_by,
+                        docstatus
+                    )
+                    VALUES (%s,%s,%s,%s,'Company','Individual','All Territories',%s,%s,%s,'Administrator','Administrator',0)
+                    """,
+                    (
+                        customer_id,
+                        customer_name_clean,
+                        mobile_no_clean,
+                        email_id_clean,
+                        ch_customer_id,
+                        now,
+                        now
+                    )
+                )
+
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": "Customer created successfully",
+            "data": {
+                "customer_id": customer_id,
+                "ch_customer_id": ch_customer_id
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
