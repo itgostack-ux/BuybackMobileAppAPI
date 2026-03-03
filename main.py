@@ -92,7 +92,7 @@ def get_device_services():
 
 
     # =================================================
-# 🔹 CUSTOMERS API (ALL CUSTOMERS)
+# CUSTOMERS API (ALL CUSTOMERS)
 # =================================================
 @app.get("/Customers")
 def get_customers():
@@ -121,6 +121,8 @@ def get_customers():
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+        
 # =================================================
 # 🔹 NESTED QUESTION LIST API (FIXED)
 # =================================================
@@ -263,6 +265,225 @@ def get_appointment_types():
             "success": True,
             "count": len(data),
             "data": data
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/GetDeviceItems")
+def get_item_groups():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        name,
+                        item_group_name,
+                        parent_item_group,
+                        is_group,
+                        lft,
+                        rgt,
+                        ch_is_active,
+                        ch_disabled
+                    FROM `tabItem Group`
+                    WHERE IFNULL(ch_disabled, 0) = 0
+                      AND IFNULL(ch_is_active, 0) = 1
+                    ORDER BY lft
+                """)
+                rows = cursor.fetchall()
+
+        if not rows:
+            return {"success": True, "data": []}
+
+        # Build tree
+        group_map = {}
+        tree = []
+
+        for row in rows:
+            row["children"] = []
+            group_map[row["name"]] = row
+
+        for row in rows:
+            parent = row.get("parent_item_group")
+
+            if parent and parent in group_map:
+                group_map[parent]["children"].append(row)
+            else:
+                tree.append(row)
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": tree
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/GetCategories")
+def get_categories(
+    item_group: str | None = Query(None)
+):
+    try:
+        query = """
+            SELECT
+                name,
+                category_id,
+                category_name,
+                item_group,
+                disabled,
+                creation,
+                modified
+            FROM `tabCH Category`
+            WHERE IFNULL(disabled, 0) = 0
+        """
+
+        params = []
+
+        # Optional filter
+        if item_group:
+            query += " AND item_group = %s"
+            params.append(item_group)
+
+        query += " ORDER BY category_id"
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/GetManufacturers")
+def get_manufacturers():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        name,
+                        manufacturer_id,
+                        short_name,
+                        full_name,
+                        website,
+                        country,
+                        logo,
+                        notes,
+                        creation,
+                        modified
+                    FROM `tabManufacturer`
+                    WHERE IFNULL(ch_disabled, 0) = 0
+                      AND IFNULL(ch_is_active, 0) = 1
+                    ORDER BY manufacturer_id
+                """)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/GetManufacturerByBrands")
+def get_brands(
+    manufacturer: str | None = Query(None)
+):
+    try:
+        query = """
+            SELECT
+                name,
+                brand_id,
+                brand,
+                ch_manufacturer,
+                image,
+                description,
+                creation,
+                modified
+            FROM `tabBrand`
+            WHERE IFNULL(ch_is_active, 0) = 1
+        """
+
+        params = []
+
+        if manufacturer:
+            query += " AND ch_manufacturer = %s"
+            params.append(manufacturer)
+
+        query += " ORDER BY brand_id"
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/GetModels")
+def get_models(
+    sub_category: str | None = Query(None),
+    manufacturer: str | None = Query(None),
+    brand: str | None = Query(None)
+):
+    try:
+        query = """
+            SELECT
+                name,
+                model_id,
+                sub_category,
+                manufacturer,
+                brand,
+                model_name,
+                item_name_preview,
+                creation,
+                modified
+            FROM `tabCH Model`
+            WHERE IFNULL(disabled, 0) = 0
+        """
+
+        params = []
+
+        if sub_category:
+            query += " AND sub_category = %s"
+            params.append(sub_category)
+
+        if manufacturer:
+            query += " AND manufacturer = %s"
+            params.append(manufacturer)
+
+        if brand:
+            query += " AND brand = %s"
+            params.append(brand)
+
+        query += " ORDER BY model_id"
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
         }
 
     except Exception as e:
