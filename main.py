@@ -9,6 +9,7 @@ from fastapi import Body, HTTPException
 import random
 import string
 from datetime import datetime
+from fastapi import Query, HTTPException
 
 # -------------------------------------------------
 # LOAD ENV
@@ -126,10 +127,7 @@ def get_customers():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-        
-# =================================================
-# 🔹 NESTED QUESTION LIST API (FIXED)
-# =================================================
+
 @app.get("/api/v1/GetQuestions")
 async def get_questions():
     try:
@@ -445,84 +443,6 @@ def create_customer(payload: dict = Body(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
-
-
-
-
-@app.get("/api/v1/GetItems")
-def get_items(
-    model_id: str | None = Query(None),
-    brand_id: str | None = Query(None),
-    manufacturer_id: str | None = Query(None),
-    sub_category_id: str | None = Query(None),
-    item_group: str | None = Query(None)
-):
-    try:
-        query = """
-            SELECT
-                name,
-                item_code,
-                item_name,
-                item_group,
-                brand,
-                variant_of,
-                ch_display_name,
-                ch_category,
-                ch_sub_category,
-                ch_model,
-                ch_brand_id,
-                ch_manufacturer_id,
-                ch_sub_category_id,
-                ch_model_id,
-                creation,
-                modified
-            FROM `tabItem`
-            WHERE IFNULL(disabled, 0) = 0
-              AND IFNULL(ch_lifecycle_status, '') = 'Active'
-        """
-
-        params = []
-
-        # 🔹 filters
-        if model_id:
-            query += " AND ch_model_id = %s"
-            params.append(model_id)
-
-        if brand_id:
-            query += " AND ch_brand_id = %s"
-            params.append(brand_id)
-
-        if manufacturer_id:
-            query += " AND ch_manufacturer_id = %s"
-            params.append(manufacturer_id)
-
-        if sub_category_id:
-            query += " AND ch_sub_category_id = %s"
-            params.append(sub_category_id)
-
-        if item_group:
-            query += " AND item_group = %s"
-            params.append(item_group)
-
-        query += " ORDER BY item_code"
-
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
-
-        return {
-            "success": True,
-            "count": len(rows),
-            "data": rows
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/api/v1/GetDeviceItems")
 def get_item_groups():
     try:
@@ -531,6 +451,7 @@ def get_item_groups():
                 cursor.execute("""
                     SELECT
                         name,
+                        item_group_id,
                         item_group_name,
                         parent_item_group,
                         is_group,
@@ -573,36 +494,28 @@ def get_item_groups():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/v1/GetCategories")
-def get_categories(
-    item_group: str | None = Query(None)
-):
+def get_categories(item_group_id: str = Query(...)):
     try:
         query = """
             SELECT
                 name,
                 category_id,
                 category_name,
-                item_group,
+                item_group_id,
                 disabled,
                 creation,
                 modified
             FROM `tabCH Category`
-            WHERE IFNULL(disabled, 0) = 0
+            WHERE IFNULL(disabled,0) = 0
+              AND item_group_id = %s
+            ORDER BY category_id
         """
-
-        params = []
-
-        # Optional filter
-        if item_group:
-            query += " AND item_group = %s"
-            params.append(item_group)
-
-        query += " ORDER BY category_id"
 
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, params)
+                cursor.execute(query, (item_group_id,))
                 rows = cursor.fetchall()
 
         return {
@@ -614,13 +527,11 @@ def get_categories(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-        # =================================================
-# 🔹 SUB CATEGORY LIST API (ACTIVE ONLY)
-# =================================================
+
 @app.get("/api/v1/GetSubCategories")
 def get_sub_categories(
     category_id: str | None = Query(None),
-    item_group: str | None = Query(None)
+    item_group_id: str | None = Query(None)
 ):
     try:
         query = """
@@ -628,9 +539,8 @@ def get_sub_categories(
                 name,
                 sub_category_id,
                 sub_category_name,
-                category,
                 category_id,
-                item_group,
+                item_group_id,
                 prefix,
                 hsn_code,
                 gst_rate,
@@ -641,7 +551,7 @@ def get_sub_categories(
                 creation,
                 modified
             FROM `tabCH Sub Category`
-            WHERE IFNULL(disabled, 0) = 0
+            WHERE IFNULL(disabled,0) = 0
         """
 
         params = []
@@ -650,9 +560,9 @@ def get_sub_categories(
             query += " AND category_id = %s"
             params.append(category_id)
 
-        if item_group:
-            query += " AND item_group = %s"
-            params.append(item_group)
+        if item_group_id:
+            query += " AND item_group_id = %s"
+            params.append(item_group_id)
 
         query += " ORDER BY sub_category_id"
 
@@ -778,43 +688,51 @@ def get_brands():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
 @app.get("/api/v1/GetModels")
 def get_models(
-    sub_category: str | None = Query(None),
-    manufacturer: str | None = Query(None),
-    brand: str | None = Query(None)
+    item_group_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+    sub_category_id: int | None = Query(None),
+    brand_id: int | None = Query(None)
 ):
     try:
         query = """
             SELECT
                 name,
                 model_id,
-                sub_category,
+                model_name,
                 manufacturer,
                 brand,
-                model_name,
+                brand_id,
+                manufacturer_id,
+                sub_category_id,
+                category_id,
+                item_group_id,
                 item_name_preview,
+                disabled,
                 creation,
                 modified
             FROM `tabCH Model`
-            WHERE IFNULL(disabled, 0) = 0
+            WHERE IFNULL(disabled,0) = 0
         """
 
         params = []
 
-        if sub_category:
-            query += " AND sub_category = %s"
-            params.append(sub_category)
+        if item_group_id:
+            query += " AND item_group_id = %s"
+            params.append(item_group_id)
 
-        if manufacturer:
-            query += " AND manufacturer = %s"
-            params.append(manufacturer)
+        if category_id:
+            query += " AND category_id = %s"
+            params.append(category_id)
 
-        if brand:
-            query += " AND brand = %s"
-            params.append(brand)
+        if sub_category_id:
+            query += " AND sub_category_id = %s"
+            params.append(sub_category_id)
+
+        if brand_id:
+            query += " AND brand_id = %s"
+            params.append(brand_id)
 
         query += " ORDER BY model_id"
 
@@ -831,6 +749,7 @@ def get_models(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.get("/api/v1/GetAttributes")
@@ -868,32 +787,168 @@ def get_attributes():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/GetModelSpecValues")
-def get_spec_values(
-    sub_category: str = Query(...),
-    brand: str = Query(...),
-    model_name: str = Query(...)
+def get_model_spec_values(
+    item_group_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+    sub_category_id: int | None = Query(None),
+    brand_id: int | None = Query(None),
+    model_id: int | None = Query(None)
 ):
     try:
-
         query = """
             SELECT
-                m.sub_category,
-                m.brand,
+                m.model_id,
                 m.model_name,
                 s.spec,
-                s.spec_value,
-                s.idx
+                s.spec_value
             FROM `tabCH Model` m
             LEFT JOIN `tabCH Model Spec Value` s
-                ON m.name = s.parent
-            WHERE IFNULL(m.disabled,0)=0
-            AND m.sub_category = %s
-            AND m.brand = %s
-            AND m.model_name = %s
-            ORDER BY s.idx
+                ON s.parent = m.name
+            WHERE IFNULL(m.disabled,0) = 0
         """
 
-        params = (sub_category, brand, model_name)
+        params = []
+
+        if item_group_id:
+            query += " AND m.item_group_id = %s"
+            params.append(item_group_id)
+
+        if category_id:
+            query += " AND m.category_id = %s"
+            params.append(category_id)
+
+        if sub_category_id:
+            query += " AND m.sub_category_id = %s"
+            params.append(sub_category_id)
+
+        if brand_id:
+            query += " AND m.brand_id = %s"
+            params.append(brand_id)
+
+        if model_id:
+            query += " AND m.model_id = %s"
+            params.append(model_id)
+
+        query += " ORDER BY m.model_id, s.spec"
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.get("/api/v1/GetModelWithSpecification")
+def get_model_spec_values(
+    item_group_id: int | None = Query(None),
+    category_id: int | None = Query(None),
+    sub_category_id: int | None = Query(None),
+    brand_id: int | None = Query(None),
+    model_id: int | None = Query(None),
+    spec: str | None = Query(None)
+):
+    try:
+        query = """
+            SELECT
+                m.model_id,
+                m.model_name,
+                m.brand,
+                s.spec,
+                s.spec_value
+            FROM `tabCH Model` m
+            JOIN `tabCH Model Spec Value` s
+                ON s.parent = m.name
+            WHERE IFNULL(m.disabled,0) = 0
+        """
+
+        params = []
+
+        if item_group_id:
+            query += " AND m.item_group_id = %s"
+            params.append(item_group_id)
+
+        if category_id:
+            query += " AND m.category_id = %s"
+            params.append(category_id)
+
+        if sub_category_id:
+            query += " AND m.sub_category_id = %s"
+            params.append(sub_category_id)
+
+        if brand_id:
+            query += " AND m.brand_id = %s"
+            params.append(brand_id)
+
+        if model_id:
+            query += " AND m.model_id = %s"
+            params.append(model_id)
+
+        if spec:
+            query += " AND s.spec = %s"
+            params.append(spec)
+
+        query += " ORDER BY m.model_id, s.spec"
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "data": rows
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/GetItems")
+def get_items(
+    item_group_id: int,
+    category_id: int,
+    sub_category_id: int,
+    brand_id: int,
+    model_id: int,
+    spec: str,
+    spec_value: str
+):
+    try:
+        query = """
+        SELECT DISTINCT
+            i.item_code,
+            i.item_name
+        FROM `tabItem` i
+        JOIN `tabItem Variant Attribute` a
+            ON a.parent = i.name
+        WHERE i.disabled = 0
+        AND i.ch_item_group_id = %s
+        AND i.ch_category_id = %s
+        AND i.ch_sub_category_id = %s
+        AND i.ch_brand_id = %s
+        AND i.ch_model_id = %s
+        AND a.attribute = %s
+        AND a.attribute_value = %s
+        """
+
+        params = (
+            item_group_id,
+            category_id,
+            sub_category_id,
+            brand_id,
+            model_id,
+            spec,
+            spec_value
+        )
 
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
