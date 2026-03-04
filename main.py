@@ -10,7 +10,7 @@ import random
 import string
 from datetime import datetime
 from fastapi import Query, HTTPException
-
+from models.customer_model import CustomerCreate
 # -------------------------------------------------
 # LOAD ENV
 # -------------------------------------------------
@@ -93,39 +93,6 @@ def get_device_services():
 
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-
-    # =================================================
-# CUSTOMERS API (ALL CUSTOMERS)
-# =================================================
-@app.get("/Customers")
-def get_customers():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        name,
-                        customer_name,
-                        mobile_no,
-                        creation,
-                        modified
-                    FROM `tabCustomer`
-                    ORDER BY name
-                    """
-                )
-                data = cursor.fetchall()
-
-        return {
-            "success": True,
-            "count": len(data),
-            "data": data
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/v1/GetQuestions")
@@ -314,134 +281,6 @@ def get_customer_by_ch_id(ch_customer_id: str):
     
 
 
-
-
-def generate_ch_customer_id(length=8):
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-
-
-@app.post("/Customers")
-def create_customer(payload: dict = Body(...)):
-    try:
-
-        customer_name = (payload.get("customer_name") or "").strip()
-        mobile_no = (payload.get("mobile_no") or "").strip()
-        email_id = (payload.get("email_id") or "").strip()
-        ch_customer_id = (payload.get("ch_customer_id") or "").strip()
-
-        if not customer_name:
-            raise HTTPException(status_code=400, detail="customer_name is required")
-
-        if not mobile_no:
-            raise HTTPException(status_code=400, detail="mobile_no is required")
-
-    
-        customer_name_clean = customer_name.title()   # Proper case
-        mobile_no_clean = mobile_no
-        email_id_clean = email_id.lower() if email_id else None
-
-        if not ch_customer_id:
-            ch_customer_id = generate_ch_customer_id()
-
-        ch_customer_id = ch_customer_id.upper()
-
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-
-
-                cursor.execute(
-                    """
-                    SELECT name FROM `tabCustomer`
-                    WHERE TRIM(mobile_no) = TRIM(%s)
-                    LIMIT 1
-                    """,
-                    (mobile_no_clean,)
-                )
-                if cursor.fetchone():
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Customer already exists with this mobile number"
-                    )
-
-               
-
-                cursor.execute(
-                    """
-                    SELECT name FROM `tabCustomer`
-                    WHERE TRIM(LOWER(ch_customer_id)) = TRIM(LOWER(%s))
-                    LIMIT 1
-                    """,
-                    (ch_customer_id,)
-                )
-                if cursor.fetchone():
-                    raise HTTPException(
-                        status_code=409,
-                        detail="ch_customer_id already exists"
-                    )
-
-
-                customer_id = customer_name_clean
-
-                # prevent duplicate name PK
-                cursor.execute(
-                    "SELECT name FROM `tabCustomer` WHERE name = %s LIMIT 1",
-                    (customer_id,)
-                )
-                if cursor.fetchone():
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Customer name already exists"
-                    )
-
-        
-                now = datetime.utcnow()
-
-                cursor.execute(
-                    """
-                    INSERT INTO `tabCustomer`
-                    (
-                        name,
-                        customer_name,
-                        mobile_no,
-                        email_id,
-                        customer_type,
-                        customer_group,
-                        territory,
-                        ch_customer_id,
-                        creation,
-                        modified,
-                        owner,
-                        modified_by,
-                        docstatus
-                    )
-                    VALUES (%s,%s,%s,%s,'Company','Individual','All Territories',%s,%s,%s,'Administrator','Administrator',0)
-                    """,
-                    (
-                        customer_id,
-                        customer_name_clean,
-                        mobile_no_clean,
-                        email_id_clean,
-                        ch_customer_id,
-                        now,
-                        now
-                    )
-                )
-
-            conn.commit()
-
-        return {
-            "success": True,
-            "message": "Customer created successfully",
-            "data": {
-                "customer_id": customer_id,
-                "ch_customer_id": ch_customer_id
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v1/GetDeviceItems")
 def get_item_groups():
@@ -960,6 +799,384 @@ def get_items(
             "count": len(rows),
             "data": rows
         }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def generate_ch_customer_id(length=8):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+@app.post("/Customers")
+def create_customer(payload: dict = Body(...)):
+    try:
+
+        customer_name = (payload.get("customer_name") or "").strip()
+        mobile_no = (payload.get("mobile_no") or "").strip()
+        email_id = (payload.get("email_id") or "").strip()
+
+        address_line1 = payload.get("address_line1")
+        city = payload.get("city")
+        state = payload.get("state")
+        country = payload.get("country")
+        pincode = payload.get("pincode")
+
+        bank_name = payload.get("bank_name")
+        branch = payload.get("branch")
+        account_holder_name = payload.get("account_holder_name")
+        account_no = payload.get("account_no")
+        ifsc_code = payload.get("ifsc_code")
+
+        if not customer_name:
+            raise HTTPException(status_code=400, detail="customer_name required")
+
+        if not mobile_no:
+            raise HTTPException(status_code=400, detail="mobile_no required")
+
+        customer_name = customer_name.title()
+        email_id = email_id.lower() if email_id else None
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                # MOBILE DUPLICATE CHECK
+                cursor.execute(
+                    "SELECT name FROM tabCustomer WHERE mobile_no=%s LIMIT 1",
+                    (mobile_no,)
+                )
+                if cursor.fetchone():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Customer already exists with this mobile"
+                    )
+
+                customer_id = customer_name
+                now = datetime.utcnow()
+
+                # CREATE CUSTOMER
+                cursor.execute("""
+                    INSERT INTO tabCustomer
+                    (
+                        name,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        customer_type,
+                        customer_group,
+                        territory,
+                        creation,
+                        modified,
+                        owner,
+                        modified_by,
+                        docstatus
+                    )
+                    VALUES (%s,%s,%s,%s,'Company','Individual','All Territories',%s,%s,'Administrator','Administrator',0)
+                """,(
+                    customer_id,
+                    customer_name,
+                    mobile_no,
+                    email_id,
+                    now,
+                    now
+                ))
+
+                # ---------------------
+                # CREATE ADDRESS
+                # ---------------------
+
+                address_name = f"{customer_name}-Address"
+
+                cursor.execute("""
+                    INSERT INTO tabAddress
+                    (
+                        name,
+                        address_title,
+                        address_type,
+                        address_line1,
+                        city,
+                        state,
+                        country,
+                        pincode,
+                        phone,
+                        creation,
+                        modified,
+                        owner,
+                        modified_by,
+                        docstatus
+                    )
+                    VALUES (%s,%s,'Billing',%s,%s,%s,%s,%s,%s,%s,%s,'Administrator','Administrator',0)
+                """,(
+                    address_name,
+                    customer_name,
+                    address_line1,
+                    city,
+                    state,
+                    country,
+                    pincode,
+                    mobile_no,
+                    now,
+                    now
+                ))
+
+                # LINK ADDRESS TO CUSTOMER
+                cursor.execute("""
+                    INSERT INTO `tabDynamic Link`
+                    (
+                        parent,
+                        parenttype,
+                        parentfield,
+                        link_doctype,
+                        link_name,
+                        creation,
+                        modified,
+                        owner,
+                        modified_by
+                    )
+                    VALUES (%s,'Address','links','Customer',%s,%s,%s,'Administrator','Administrator')
+                """,(
+                    address_name,
+                    customer_id,
+                    now,
+                    now
+                ))
+
+                # ---------------------
+                # PAYMENT ACCOUNT
+                # ---------------------
+
+                if bank_name and account_no:
+
+                    cursor.execute("""
+                        INSERT INTO `tabCH Customer Payment Account`
+                        (
+                            account_label,
+                            payment_mode,
+                            bank_name,
+                            branch,
+                            account_holder_name,
+                            account_no,
+                            ifsc_code,
+                            parent,
+                            parentfield,
+                            parenttype,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by,
+                            docstatus
+                        )
+                        VALUES
+                        (%s,'Bank Transfer',%s,%s,%s,%s,%s,%s,'ch_payment_accounts','Customer',%s,%s,'Administrator','Administrator',0)
+                    """,(
+                        bank_name,
+                        bank_name,
+                        branch,
+                        account_holder_name,
+                        account_no,
+                        ifsc_code,
+                        customer_id,
+                        now,
+                        now
+                    ))
+
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": "Customer created with address and payment details",
+            "customer": customer_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+        @app.post("/api/v2/Customers")
+def create_customer(payload: CustomerCreate):
+
+    try:
+
+        customer_name = payload.customer_name.strip().title()
+        mobile_no = payload.mobile_no.strip()
+        email_id = payload.email_id.lower() if payload.email_id else None
+
+        address = payload.address
+        payment = payload.payment
+
+        if not customer_name:
+            raise HTTPException(status_code=400, detail="customer_name required")
+
+        if not mobile_no:
+            raise HTTPException(status_code=400, detail="mobile_no required")
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                # --------------------------
+                # MOBILE DUPLICATE CHECK
+                # --------------------------
+                cursor.execute(
+                    "SELECT name FROM tabCustomer WHERE mobile_no=%s LIMIT 1",
+                    (mobile_no,)
+                )
+
+                if cursor.fetchone():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Customer already exists with this mobile number"
+                    )
+
+                now = datetime.utcnow()
+
+                # --------------------------
+                # GENERATE CUSTOMER ID
+                # --------------------------
+                ch_customer_id = generate_ch_customer_id()
+
+                customer_id = ch_customer_id
+
+                # --------------------------
+                # INSERT CUSTOMER
+                # --------------------------
+                cursor.execute("""
+                    INSERT INTO tabCustomer
+                    (
+                        name,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        ch_customer_id,
+                        customer_type,
+                        customer_group,
+                        territory,
+                        creation,
+                        modified,
+                        owner,
+                        modified_by,
+                        docstatus
+                    )
+                    VALUES (%s,%s,%s,%s,%s,'Company','Individual','All Territories',%s,%s,'Administrator','Administrator',0)
+                """,(
+                    customer_id,
+                    customer_name,
+                    mobile_no,
+                    email_id,
+                    ch_customer_id,
+                    now,
+                    now
+                ))
+
+                # --------------------------
+                # ADDRESS
+                # --------------------------
+                if address:
+
+                    address_name = f"{customer_id}-ADDRESS"
+
+                    cursor.execute("""
+                        INSERT INTO tabAddress
+                        (
+                            name,
+                            address_title,
+                            address_type,
+                            address_line1,
+                            city,
+                            state,
+                            country,
+                            pincode,
+                            phone,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by,
+                            docstatus
+                        )
+                        VALUES (%s,%s,'Billing',%s,%s,%s,%s,%s,%s,%s,%s,'Administrator','Administrator',0)
+                    """,(
+                        address_name,
+                        customer_name,
+                        address.address_line1,
+                        address.city,
+                        address.state,
+                        address.country,
+                        address.pincode,
+                        mobile_no,
+                        now,
+                        now
+                    ))
+
+                    # LINK ADDRESS
+                    cursor.execute("""
+                        INSERT INTO `tabDynamic Link`
+                        (
+                            parent,
+                            parenttype,
+                            parentfield,
+                            link_doctype,
+                            link_name,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by
+                        )
+                        VALUES (%s,'Address','links','Customer',%s,%s,%s,'Administrator','Administrator')
+                    """,(
+                        address_name,
+                        customer_id,
+                        now,
+                        now
+                    ))
+
+                # --------------------------
+                # PAYMENT ACCOUNT
+                # --------------------------
+                if payment and payment.account_no:
+
+                    cursor.execute("""
+                        INSERT INTO `tabCH Customer Payment Account`
+                        (
+                            account_label,
+                            payment_mode,
+                            bank_name,
+                            branch,
+                            account_holder_name,
+                            account_no,
+                            ifsc_code,
+                            parent,
+                            parentfield,
+                            parenttype,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by,
+                            docstatus
+                        )
+                        VALUES
+                        (%s,'Bank Transfer',%s,%s,%s,%s,%s,%s,'ch_payment_accounts','Customer',%s,%s,'Administrator','Administrator',0)
+                    """,(
+                        payment.bank_name,
+                        payment.bank_name,
+                        payment.branch,
+                        payment.account_holder_name,
+                        payment.account_no,
+                        payment.ifsc_code,
+                        customer_id,
+                        now,
+                        now
+                    ))
+
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": "Customer created successfully",
+            "customer_id": customer_id,
+            "ch_customer_id": ch_customer_id
+        }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
