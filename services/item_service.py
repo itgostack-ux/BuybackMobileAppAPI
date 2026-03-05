@@ -1,0 +1,45 @@
+from repositories.item_repository import *
+
+
+def response(data):
+    return {"success":True,"count":len(data),"data":data}
+
+
+def get_device_items_service():
+    return response(get_device_items_repo())
+
+
+def get_categories_service(item_group_id):
+    return response(get_categories_repo(item_group_id))
+
+
+def get_sub_categories_service(category_id=None,item_group_id=None):
+    return response(get_sub_categories_repo(category_id,item_group_id))
+
+
+def get_manufacturers_service():
+    return response(get_manufacturers_repo())
+
+
+def get_brands_service(manufacturer=None):
+    return response(get_brands_repo(manufacturer))
+
+
+def get_models_service(brand_id=None):
+    return response(get_models_repo(brand_id))
+
+
+def get_attributes_service():
+    return response(get_attributes_repo())
+
+
+def get_model_spec_values_service(model_id=None):
+    return response(get_model_spec_values_repo(model_id))
+
+
+def get_model_with_spec_service(model_id=None):
+    return response(get_model_with_spec_repo(model_id))
+
+
+def get_items_service(params):
+    return response(get_items_repo(params))

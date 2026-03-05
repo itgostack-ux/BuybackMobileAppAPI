@@ -3,25 +3,24 @@ from typing import Optional
 
 
 class AddressModel(BaseModel):
-    address_line1: Optional[str]
-    city: Optional[str]
-    state: Optional[str]
-    country: Optional[str]
-    pincode: Optional[str]
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    pincode: Optional[str] = None
 
 
 class PaymentAccountModel(BaseModel):
-    bank_name: Optional[str]
-    branch: Optional[str]
-    account_holder_name: Optional[str]
-    account_no: Optional[str]
-    ifsc_code: Optional[str]
+    bank_name: Optional[str] = None
+    branch: Optional[str] = None
+    account_holder_name: Optional[str] = None
+    account_no: Optional[str] = None
+    ifsc_code: Optional[str] = None
 
 
 class CustomerCreate(BaseModel):
     customer_name: str
     mobile_no: str
-    email_id: Optional[EmailStr]
-
-    address: Optional[AddressModel]
-    payment: Optional[PaymentAccountModel]
+    email_id: Optional[EmailStr] = None
+    address: Optional[AddressModel] = None
+    payment: Optional[PaymentAccountModel] = None
