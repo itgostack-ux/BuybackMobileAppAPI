@@ -1,44 +1,46 @@
 from core.database import get_db_connection
 
 
-def get_questions_repo():
-
+def get_buyback_question_list_repo():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
 
             cursor.execute("""
-                SELECT
-                    question_id AS QuestionID,
-                    question_text AS QuestionText,
-                    question_description AS QuestionDescription,
-                    question_type AS QuestionType
-                FROM `tabQuestion Master`
-                WHERE is_active = 1
-                ORDER BY question_id
+                SELECT 
+                    qb.name AS QuestionName,
+                    qb.question_text AS QuestionText,
+                    qb.question_type AS QuestionType,
+                    opt.option_label AS OptionLabel,
+                    opt.option_value AS OptionValue,
+                    opt.price_impact_percent AS PriceImpactPercent
+                FROM `tabBuyback Question Bank` qb
+                LEFT JOIN `tabBuyback Question Option` opt
+                    ON qb.name = opt.parent
+                WHERE qb.disabled = 0
+                ORDER BY qb.display_order, opt.idx
             """)
 
-            questions = cursor.fetchall()
+            return cursor.fetchall()
 
-            if not questions:
-                return [], []
+def get_automated_test_list_repo():
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
 
-            question_ids = [str(q["QuestionID"]) for q in questions]
+            cursor.execute("""
+                SELECT 
+                    qb.name AS QuestionName,
+                    qb.question_text AS QuestionText,
+                    qb.question_type AS QuestionType,
+                    opt.option_label AS OptionLabel,
+                    opt.option_value AS OptionValue,
+                    opt.price_impact_percent AS PriceImpactPercent
+                FROM `tabBuyback Question Bank` qb
+                LEFT JOIN `tabBuyback Question Option` opt
+                    ON qb.name = opt.parent
+                WHERE qb.diagnosis_type = 'Automated Test'
+                  AND qb.disabled = 0
+                ORDER BY qb.display_order, opt.idx
+            """)
 
-            format_strings = ",".join(["%s"] * len(question_ids))
-
-            cursor.execute(f"""
-                SELECT
-                    question_id AS QuestionID,
-                    option_id AS OptionID,
-                    option_text AS OptionText,
-                    grade_id AS GradeID,
-                    grade_name AS GradeName
-                FROM `tabOption Master`
-                WHERE is_active = 1
-                AND question_id IN ({format_strings})
-                ORDER BY question_id, option_id
-            """, tuple(question_ids))
-
-            options = cursor.fetchall()
-
-    return questions, options
+            return cursor.fetchall()
+            

@@ -9,10 +9,9 @@ from collections import defaultdict
 from routers.buyback_router import router as buyback_router
 from routers.customer_router import router as customer_router
 from routers.device_router import router as device_router
-from routers.question_router import router as question_router
 from routers.master_router import router as master_router
 from routers.item_router import router as item_router
-
+from routers.question_router import router as question_router
 # -------------------------------------------------
 # LOAD ENV
 # -------------------------------------------------
@@ -58,11 +57,10 @@ def root():
 
 app.include_router(buyback_router)
 app.include_router(customer_router)
-app.include_router(question_router)
 app.include_router(master_router)
 app.include_router(device_router)
 app.include_router(item_router)
-
+app.include_router(question_router)
 
 # -------------------------------------------------
 # HEALTH
@@ -79,6 +77,16 @@ def health():
         raise HTTPException(status_code=500, detail=str(e))
     
         
+
+@app.get("/dummy")
+def dummy():
+    return {"message": "Production API updated successfully"}
+
+
+
+
+
+
 # =================================================
 # 🔹 NESTED QUESTION LIST API (FIXED)
 # =================================================
