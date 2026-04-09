@@ -38,3 +38,9 @@ def fetch_device_services():
         )
 
     return services
+
+
+
+
+
+    
