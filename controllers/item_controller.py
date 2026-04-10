@@ -39,3 +39,27 @@ def get_model_with_spec_controller(model_id=None):
 
 def get_items_controller(params):
     return get_items_service(params)
+
+def get_brands_by_subcategory_controller(
+    item_group_id=None,
+    category_id=None,
+    sub_category_id=None
+):
+    return get_brands_by_subcategory_service(
+        item_group_id,
+        category_id,
+        sub_category_id
+    )
+
+def get_models_filtered_controller(
+    item_group_id=None,
+    category_id=None,
+    sub_category_id=None,
+    brand_id=None
+):
+    return get_models_filtered_service(
+        item_group_id,
+        category_id,
+        sub_category_id,
+        brand_id
+    )

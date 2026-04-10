@@ -77,6 +77,35 @@ def get_brands_repo(manufacturer=None):
     return fetch_query(query,params)
 
 
+
+def get_brands_by_subcategory_repo(item_group_id=None, category_id=None, sub_category_id=None):
+    query = """
+        SELECT DISTINCT
+            brand_id,
+            brand
+        FROM `tabCH Model`
+        WHERE IFNULL(disabled,0)=0
+    """
+
+    params = []
+
+    if item_group_id:
+        query += " AND item_group_id=%s"
+        params.append(item_group_id)
+
+    if category_id:
+        query += " AND category_id=%s"
+        params.append(category_id)
+
+    if sub_category_id:
+        query += " AND sub_category_id=%s"
+        params.append(sub_category_id)
+
+    query += " ORDER BY brand"
+
+    return fetch_query(query, params)
+
+
 def get_models_repo(brand_id=None):
 
     query="""
@@ -159,3 +188,41 @@ def get_items_repo(params):
         AND a.attribute=%s
         AND a.attribute_value=%s
     """,params)
+
+def get_models_filtered_repo(
+    item_group_id=None,
+    category_id=None,
+    sub_category_id=None,
+    brand_id=None
+):
+    query = """
+        SELECT
+            name,
+            model_id,
+            model_name,
+            brand_id
+        FROM `tabCH Model`
+        WHERE IFNULL(disabled,0)=0
+    """
+
+    params = []
+
+    if item_group_id:
+        query += " AND item_group_id=%s"
+        params.append(item_group_id)
+
+    if category_id:
+        query += " AND category_id=%s"
+        params.append(category_id)
+
+    if sub_category_id:
+        query += " AND sub_category_id=%s"
+        params.append(sub_category_id)
+
+    if brand_id:
+        query += " AND brand_id=%s"
+        params.append(brand_id)
+
+    query += " ORDER BY model_name"
+
+    return fetch_query(query, params)

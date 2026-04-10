@@ -43,3 +43,30 @@ def get_model_with_spec_service(model_id=None):
 
 def get_items_service(params):
     return response(get_items_repo(params))
+
+def get_brands_by_subcategory_service(
+    item_group_id=None,
+    category_id=None,
+    sub_category_id=None
+):
+    return response(
+        get_brands_by_subcategory_repo(
+            item_group_id,
+            category_id,
+            sub_category_id
+        )
+    )
+def get_models_filtered_service(
+    item_group_id=None,
+    category_id=None,
+    sub_category_id=None,
+    brand_id=None
+):
+    return response(
+        get_models_filtered_repo(
+            item_group_id,
+            category_id,
+            sub_category_id,
+            brand_id
+        )
+    )

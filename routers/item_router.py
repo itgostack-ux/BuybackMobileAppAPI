@@ -34,11 +34,36 @@ def get_brands_all():
     return get_brands_controller()
 
 
+@router.get("/GetBrandsBySubCategory")
+def get_brands_by_subcategory(
+    item_group_id: int | None = None,
+    category_id: int | None = None,
+    sub_category_id: int | None = None
+):
+    return get_brands_by_subcategory_controller(
+        item_group_id,
+        category_id,
+        sub_category_id
+    )
+
 @router.get("/GetModels")
 def get_models(brand_id:int|None=None):
     return get_models_controller(brand_id)
 
 
+@router.get("/GetModelsByBrandAndCategory")
+def get_models_by_filter(
+    item_group_id: int | None = None,
+    category_id: int | None = None,
+    sub_category_id: int | None = None,
+    brand_id: int | None = None
+):
+    return get_models_filtered_controller(
+        item_group_id,
+        category_id,
+        sub_category_id,
+        brand_id
+    )
 @router.get("/GetAttributes")
 def get_attributes():
     return get_attributes_controller()
@@ -67,3 +92,4 @@ def get_items(item_group_id:int,
             brand_id,model_id,spec,spec_value)
 
     return get_items_controller(params)
+
