@@ -1,6 +1,7 @@
 from fastapi import APIRouter,Query
 from controllers.item_controller import *
-
+from pydantic import BaseModel
+from typing import Dict
 router=APIRouter(prefix="/api/v1",tags=["Items"])
 
 
@@ -93,3 +94,39 @@ def get_items(item_group_id:int,
 
     return get_items_controller(params)
 
+@router.get("/GetModelAttributes")
+def get_model_distinct_attributes(model_id: int):
+    return get_model_distinct_attributes_controller(model_id)
+
+@router.get("/GetModelAttributeValues")
+def get_attribute_values(
+    model_id: int,
+    spec: str
+):
+    return get_attribute_values_controller(model_id, spec)
+
+class ItemFilterRequest(BaseModel):
+    item_group_id: int
+    category_id: int
+    sub_category_id: int
+    brand_id: int
+    model_id: int
+    filters: Dict[str, str]
+
+
+@router.post("/GetItemsWithSpec")
+def get_items(payload: ItemFilterRequest):
+    return get_items_controller(
+        payload.item_group_id,
+        payload.category_id,
+        payload.sub_category_id,
+        payload.brand_id,
+        payload.model_id,
+        payload.filters
+    )
+@router.get("/api/v1/get-colors-by-storage")
+def get_colors_by_storage(
+    model_id: int = Query(...),
+    storage_value: str = Query(...)
+):
+    return get_colors_by_storage_controller(model_id, storage_value)

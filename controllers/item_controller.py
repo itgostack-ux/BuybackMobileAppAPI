@@ -63,3 +63,28 @@ def get_models_filtered_controller(
         sub_category_id,
         brand_id
     )
+def get_model_distinct_attributes_controller(model_id):
+    return get_model_distinct_attributes_service(model_id)
+
+def get_attribute_values_controller(model_id, spec):
+    return get_attribute_values_service(model_id, spec)
+
+def get_items_controller(
+    item_group_id,
+    category_id,
+    sub_category_id,
+    brand_id,
+    model_id,
+    filters
+):
+    return get_items_service(
+        item_group_id,
+        category_id,
+        sub_category_id,
+        brand_id,
+        model_id,
+        filters
+    )
+
+def get_colors_by_storage_controller(model_id: int, storage_value: str):
+    return get_colors_by_storage_service(model_id, storage_value)

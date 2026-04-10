@@ -226,3 +226,100 @@ def get_models_filtered_repo(
     query += " ORDER BY model_name"
 
     return fetch_query(query, params)
+
+
+def get_model_distinct_attributes_repo(model_id):
+    return fetch_query("""
+        SELECT DISTINCT
+            s.spec
+        FROM `tabCH Model Spec Value` s
+        JOIN `tabCH Model` m
+            ON s.parent = m.name
+        WHERE m.model_id=%s
+        ORDER BY s.spec
+    """, (model_id,))
+
+def get_attribute_values_repo(model_id, spec):
+    return fetch_query("""
+        SELECT DISTINCT
+            s.spec_value
+        FROM `tabCH Model Spec Value` s
+        JOIN `tabCH Model` m
+            ON s.parent = m.name
+        WHERE
+            m.model_id=%s
+            AND s.spec=%s
+        ORDER BY s.spec_value
+    """, (model_id, spec))
+
+def get_items_repo(
+    item_group_id,
+    category_id,
+    sub_category_id,
+    brand_id,
+    model_id,
+    filters: dict
+):
+    conditions = []
+    params = [
+        item_group_id,
+        category_id,
+        sub_category_id,
+        brand_id,
+        model_id
+    ]
+
+    for attr, value in filters.items():
+        conditions.append("(a.attribute=%s AND a.attribute_value=%s)")
+        params.extend([attr, value])
+
+    query = f"""
+        SELECT
+            i.item_code,
+            i.item_name
+        FROM `tabItem` i
+        JOIN `tabItem Variant Attribute` a
+            ON a.parent = i.name
+        WHERE
+            i.disabled = 0
+            AND i.ch_item_group_id = %s
+            AND i.ch_category_id = %s
+            AND i.ch_sub_category_id = %s
+            AND i.ch_brand_id = %s
+            AND i.ch_model_id = %s
+            AND ({' OR '.join(conditions)})
+        GROUP BY i.name, i.item_code, i.item_name
+        HAVING COUNT(DISTINCT a.attribute) = %s
+    """
+
+    params.append(len(filters))
+
+    return fetch_query(query, tuple(params))
+
+
+def get_colors_by_storage_repo(model_id: int, storage_value: str):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT DISTINCT
+                        color.spec_value AS color
+                    FROM `tabCH Model Spec Value` storage
+                    JOIN `tabCH Model Spec Value` color
+                        ON storage.parent = color.parent
+                    JOIN `tabCH Model` m
+                        ON m.name = storage.parent
+                    WHERE m.model_id = %s
+                        AND storage.spec = 'Storage'
+                        AND storage.spec_value = %s
+                        AND color.spec = 'Color'
+                    ORDER BY color.spec_value
+                    """,
+                    (model_id, storage_value)
+                )
+
+                return cursor.fetchall() 
+
+    except Exception as e:
+        raise Exception(f"Repo Error: {str(e)}")

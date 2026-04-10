@@ -70,3 +70,39 @@ def get_models_filtered_service(
             brand_id
         )
     )
+
+def get_model_distinct_attributes_service(model_id):
+    return response(get_model_distinct_attributes_repo(model_id))
+
+def get_attribute_values_service(model_id, spec):
+    return response(get_attribute_values_repo(model_id, spec))
+
+def get_items_service(
+    item_group_id,
+    category_id,
+    sub_category_id,
+    brand_id,
+    model_id,
+    filters
+):
+    return response(
+        get_items_repo(
+            item_group_id,
+            category_id,
+            sub_category_id,
+            brand_id,
+            model_id,
+            filters
+        )
+    )
+
+
+
+def get_colors_by_storage_service(model_id: int, storage_value: str):
+    data = get_colors_by_storage_repo(model_id, storage_value)
+
+    return {
+        "success": True,
+        "message": "Color list fetched successfully",
+        "data": data
+    }
