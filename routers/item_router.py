@@ -130,3 +130,7 @@ def get_colors_by_storage(
     storage_value: str = Query(...)
 ):
     return get_colors_by_storage_controller(model_id, storage_value)
+
+@router.get("/GetBuybackPrice")
+def get_buyback_price(item_code: str = Query(...)):
+    return get_buyback_price_controller(item_code)

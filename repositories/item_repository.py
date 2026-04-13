@@ -313,7 +313,7 @@ def get_colors_by_storage_repo(model_id: int, storage_value: str):
                     WHERE m.model_id = %s
                         AND storage.spec = 'Storage'
                         AND storage.spec_value = %s
-                        AND color.spec = 'Color'
+                        AND color.spec = 'Colour'
                     ORDER BY color.spec_value
                     """,
                     (model_id, storage_value)
@@ -323,3 +323,32 @@ def get_colors_by_storage_repo(model_id: int, storage_value: str):
 
     except Exception as e:
         raise Exception(f"Repo Error: {str(e)}")
+
+def get_buyback_price_repo(item_code):
+    return fetch_query("""
+        SELECT 
+            name,
+            sku_id,
+            buyback_price_id,
+            item_code,
+            item_name,
+            current_market_price,
+            vendor_price,
+            a_grade_iw_0_3,
+            b_grade_iw_0_3,
+            c_grade_iw_0_3,
+            a_grade_iw_0_6,
+            b_grade_iw_0_6,
+            c_grade_iw_0_6,
+            d_grade_iw_0_6,
+            a_grade_iw_6_11,
+            b_grade_iw_6_11,
+            c_grade_iw_6_11,
+            d_grade_iw_6_11,
+            a_grade_oow_11,
+            b_grade_oow_11,
+            c_grade_oow_11,
+            d_grade_oow_11
+        FROM `tabBuyback Price Master`
+        WHERE item_code = %s
+    """, (item_code,))

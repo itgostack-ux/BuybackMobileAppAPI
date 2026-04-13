@@ -88,3 +88,6 @@ def get_items_controller(
 
 def get_colors_by_storage_controller(model_id: int, storage_value: str):
     return get_colors_by_storage_service(model_id, storage_value)
+
+def get_buyback_price_controller(item_code):
+    return get_buyback_price_service(item_code)

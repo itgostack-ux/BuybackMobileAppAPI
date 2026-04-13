@@ -106,3 +106,6 @@ def get_colors_by_storage_service(model_id: int, storage_value: str):
         "message": "Color list fetched successfully",
         "data": data
     }
+
+def get_buyback_price_service(item_code):
+    return response(get_buyback_price_repo(item_code))
