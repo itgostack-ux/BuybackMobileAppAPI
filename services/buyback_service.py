@@ -1,31 +1,14 @@
-# services/buyback_service.py
-
 from repositories.buyback_repository import BuybackRepository
 
 repo = BuybackRepository()
 
 
-# ✅ GET PRICE
-def get_buyback_details(item_code=None, buyback_price_id=None):
-
-    if not item_code and not buyback_price_id:
-        return {"success": False, "message": "Provide item_code or buyback_price_id"}
-
-    result = repo.fetch_buyback_price(item_code, buyback_price_id)
-
-    if not result:
-        return {"success": False, "message": "Buyback item not found"}
-
-    return {
-        "success": True,
-        "message": "Buyback details fetched successfully",
-        "data": result
-    }
-
-
-# ✅ CREATE ASSESSMENT (🔥 FIXED LOGIC)
+# ✅ CREATE ASSESSMENT (ENGINE LOGIC)
 def create_buyback_service(payload: dict):
 
+    # ─────────────────────────────
+    # STEP 1: BASE PRICE
+    # ─────────────────────────────
     price_data = repo.get_base_price(payload["item_code"])
 
     if not price_data:
@@ -33,30 +16,56 @@ def create_buyback_service(payload: dict):
 
     base_price = float(price_data["current_market_price"])
 
-    # 🔥 SUM LOGIC (NOT MAX)
-    total_percent = 0
+    # ─────────────────────────────
+    # STEP 2: DEDUCTIONS
+    # ─────────────────────────────
+    total_deduction = 0
 
     for r in payload.get("responses", []):
+
+        question_id = r.get("question_id")
+        answer_value = r.get("answer_value")
+
         percent = repo.get_price_percent(
-            r["question_code"],
-            r["answer_value"]
+            question_id,
+            answer_value
         )
-        total_percent += percent
 
-    # 🔥 CAP (IMPORTANT — MATCH UI)
-    MAX_DEDUCTION_PERCENT = 30
-    total_percent = min(total_percent, MAX_DEDUCTION_PERCENT)
+        amount = base_price * (percent / 100)
+        total_deduction += amount
 
-    estimated_price = round(
-        base_price * (1 - total_percent / 100), 2
-    )
+    # ─────────────────────────────
+    # STEP 3: RAW PRICE
+    # ─────────────────────────────
+    calculated_price = base_price - total_deduction
 
-    name = repo.create_assessment(payload, estimated_price)
+    # ─────────────────────────────
+    # STEP 4: FLOOR PRICE
+    # ─────────────────────────────
+    floor_price = repo.get_floor_price(payload["item_code"])
 
+    if not floor_price or floor_price <= 0:
+        floor_price = base_price * 0.1
+
+    # ─────────────────────────────
+    # STEP 5: FINAL PRICE
+    # ─────────────────────────────
+    final_price = max(floor_price, calculated_price)
+
+    # ─────────────────────────────
+    # STEP 6: SAVE
+    # ─────────────────────────────
+    name = repo.create_assessment(payload, final_price)
+
+    # ─────────────────────────────
+    # STEP 7: RESPONSE
+    # ─────────────────────────────
     return {
         "success": True,
         "assessment_name": name,
-        "base_price": base_price,
-        "depreciation_percent": total_percent,
-        "estimated_price": estimated_price
+        "base_price": round(base_price, 2),
+        "total_deduction": round(total_deduction, 2),
+        "calculated_price": round(calculated_price, 2),
+        "floor_price": round(floor_price, 2),
+        "estimated_price": round(final_price, 2)
     }

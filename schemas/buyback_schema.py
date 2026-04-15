@@ -1,19 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 
 # =========================
-# 1. GET BUYBACK PRICE
+# 1️⃣ GET BUYBACK PRICE
 # =========================
 
 class BuybackPriceData(BaseModel):
     buyback_price_id: str
-    sku_id: Optional[str]
+    sku_id: Optional[str] = None
     item_code: str
     item_name: str
     current_market_price: float
-    vendor_price: Optional[float]
-    is_active: Optional[int]
+    vendor_price: Optional[float] = None
+    is_active: Optional[int] = None
 
 
 class BuybackPriceResponse(BaseModel):
@@ -23,12 +23,12 @@ class BuybackPriceResponse(BaseModel):
 
 
 # =========================
-# 2. REQUEST MODELS
+# 2️⃣ REQUEST MODELS
 # =========================
 
 class ResponseItem(BaseModel):
-    question_code: str
-    answer_value: str
+    question_id: str = Field(..., example="BQB-00001")
+    answer_value: str = Field(..., example="Yes")
 
 
 class BuybackRequest(BaseModel):
@@ -50,24 +50,26 @@ class BuybackRequest(BaseModel):
 
 
 # =========================
-# 3. CREATE RESPONSE MODEL
+# 3️⃣ RESPONSE MODELS
 # =========================
 
 class BuybackCreateResponse(BaseModel):
     success: bool
     assessment_name: str
     base_price: float
-    depreciation_percent: float
+    total_deduction: float
+    calculated_price: float
+    floor_price: float
     estimated_price: float
 
 
 # =========================
-# 4. OPTIONAL RESPONSE ITEM (DEBUG / FUTURE)
+# 4️⃣ OPTIONAL (DEBUG / FUTURE)
 # =========================
 
 class BuybackResponseDetail(BaseModel):
-    question_code: str
-    question: Optional[str]
+    question_id: str
+    question: Optional[str] = None
     answer_label: str
     price_impact_percent: float
 
@@ -76,6 +78,8 @@ class BuybackDetailedResponse(BaseModel):
     success: bool
     assessment_name: str
     base_price: float
-    depreciation_percent: float
+    total_deduction: float
+    calculated_price: float
+    floor_price: float
     estimated_price: float
-    responses: Optional[List[BuybackResponseDetail]]
+    responses: Optional[List[BuybackResponseDetail]] = None
