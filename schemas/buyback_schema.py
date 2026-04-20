@@ -1,40 +1,34 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
+from enum import Enum
 
 
-# =========================
-# 1️⃣ GET BUYBACK PRICE
-# =========================
-
-class BuybackPriceData(BaseModel):
-    buyback_price_id: str
-    sku_id: Optional[str] = None
-    item_code: str
-    item_name: str
-    current_market_price: float
-    vendor_price: Optional[float] = None
-    is_active: Optional[int] = None
+# =========================================================
+# ENUMS
+# =========================================================
+class TestResult(str, Enum):
+    PASS = "Pass"
+    FAIL = "Fail"
 
 
-class BuybackPriceResponse(BaseModel):
-    success: bool
-    message: str
-    data: BuybackPriceData
-
-
-# =========================
-# 2️⃣ REQUEST MODELS
-# =========================
-
+# =========================================================
+# REQUEST MODELS
+# =========================================================
 class ResponseItem(BaseModel):
     question_id: str = Field(..., example="BQB-00001")
     answer_value: str = Field(..., example="Yes")
 
 
+class DiagnosticItem(BaseModel):
+    test_code: str = Field(..., example="BQB-00006")  # FIXED
+    test_name: str = Field(..., example="Bluetooth")
+    result: TestResult = Field(..., example="Fail")
+
+
 class BuybackRequest(BaseModel):
     customer: str
     customer_name: str
-    mobile_no: str
+    mobile_no: str = Field(..., pattern="^[0-9]{10}$")
 
     item_code: str
     item_name: str
@@ -46,27 +40,31 @@ class BuybackRequest(BaseModel):
     item_group: Optional[str] = None
     owner: Optional[str] = "Administrator"
 
-    responses: List[ResponseItem]
+    responses: List[ResponseItem] = Field(..., min_items=1)
 
 
-# =========================
-# 3️⃣ RESPONSE MODELS
-# =========================
+class FullBuybackRequest(BuybackRequest):
+    diagnostics: List[DiagnosticItem] = Field(default_factory=list)
 
+
+# =========================================================
+# RESPONSE MODELS
+# =========================================================
 class BuybackCreateResponse(BaseModel):
     success: bool
     assessment_name: str
+
     base_price: float
-    total_deduction: float
+    total_percent: float
+
     calculated_price: float
     floor_price: float
     estimated_price: float
 
 
-# =========================
-# 4️⃣ OPTIONAL (DEBUG / FUTURE)
-# =========================
-
+# =========================================================
+# DEBUG RESPONSE
+# =========================================================
 class BuybackResponseDetail(BaseModel):
     question_id: str
     question: Optional[str] = None
@@ -74,12 +72,22 @@ class BuybackResponseDetail(BaseModel):
     price_impact_percent: float
 
 
+class BuybackDiagnosticDetail(BaseModel):
+    test_code: str
+    test_name: str
+    result: TestResult
+    depreciation_percent: float
+
+
 class BuybackDetailedResponse(BaseModel):
     success: bool
     assessment_name: str
+
     base_price: float
-    total_deduction: float
+    total_percent: float
     calculated_price: float
     floor_price: float
     estimated_price: float
-    responses: Optional[List[BuybackResponseDetail]] = None
+
+    responses: List[BuybackResponseDetail] = Field(default_factory=list)
+    diagnostics: List[BuybackDiagnosticDetail] = Field(default_factory=list)

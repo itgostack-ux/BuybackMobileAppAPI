@@ -7,60 +7,32 @@ import uuid
 class BuybackRepository:
 
     # =========================
-    # 1️⃣ FETCH BUYBACK PRICE (ONLY ITEM CODE)
-    # =========================
-    def fetch_buyback_price(self, item_code):
-
-        with get_db_connection() as conn:
-            cursor = conn.cursor(DictCursor)
-
-            cursor.execute("""
-                SELECT
-                    name AS buyback_price_id,
-                    item_code,
-                    item_name,
-                    current_market_price,
-                    vendor_price,
-                    is_active
-                FROM `tabBuyback Price Master`
-                WHERE item_code = %s
-                AND is_active = 1
-                LIMIT 1
-            """, (item_code,))
-
-            return cursor.fetchone()
-
-    # =========================
-    # 2️⃣ BASE PRICE
+    # BASE PRICE
     # =========================
     def get_base_price(self, item_code):
-
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
                 SELECT current_market_price, d_grade_oow_11
                 FROM `tabBuyback Price Master`
-                WHERE item_code = %s
-                AND is_active = 1
+                WHERE item_code = %s AND is_active = 1
                 LIMIT 1
             """, (item_code,))
 
             return cursor.fetchone()
 
     # =========================
-    # 3️⃣ FLOOR PRICE
+    # FLOOR PRICE
     # =========================
     def get_floor_price(self, item_code):
-
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
                 SELECT d_grade_oow_11
                 FROM `tabBuyback Price Master`
-                WHERE item_code = %s
-                AND is_active = 1
+                WHERE item_code = %s AND is_active = 1
                 LIMIT 1
             """, (item_code,))
 
@@ -68,10 +40,9 @@ class BuybackRepository:
             return float(result["d_grade_oow_11"]) if result else 0
 
     # =========================
-    # 4️⃣ PRICE IMPACT %
+    # COMMON % (RESP + DIAG)
     # =========================
     def get_price_percent(self, question_id, answer_value):
-
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -79,7 +50,7 @@ class BuybackRepository:
                 SELECT price_impact_percent
                 FROM `tabBuyback Question Option`
                 WHERE parent = %s
-                  AND TRIM(LOWER(option_value)) = TRIM(LOWER(%s))
+                AND TRIM(LOWER(option_value)) = TRIM(LOWER(%s))
                 LIMIT 1
             """, (question_id, answer_value))
 
@@ -87,27 +58,9 @@ class BuybackRepository:
             return float(result["price_impact_percent"]) if result else 0
 
     # =========================
-    # 5️⃣ QUESTION DETAILS
-    # =========================
-    def get_question_details(self, question_id):
-
-        with get_db_connection() as conn:
-            cursor = conn.cursor(DictCursor)
-
-            cursor.execute("""
-                SELECT name, question_text
-                FROM `tabBuyback Question Bank`
-                WHERE name = %s
-                LIMIT 1
-            """, (question_id,))
-
-            return cursor.fetchone()
-
-    # =========================
-    # 6️⃣ GENERATE NAME
+    # GENERATE NAME
     # =========================
     def generate_assessment_name(self):
-
         year = datetime.now().strftime("%Y")
 
         with get_db_connection() as conn:
@@ -124,11 +77,7 @@ class BuybackRepository:
 
         return f"BBA-{year}-{str(number).zfill(5)}"
 
-    # =========================
-    # 7️⃣ GENERATE ID
-    # =========================
     def generate_assessment_id(self):
-
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -141,7 +90,7 @@ class BuybackRepository:
             return (result["max_id"] or 0) + 1
 
     # =========================
-    # 8️⃣ CREATE ASSESSMENT
+    # CREATE BASIC (RESP ONLY)
     # =========================
     def create_assessment(self, payload, estimated_price):
 
@@ -151,24 +100,20 @@ class BuybackRepository:
             name = self.generate_assessment_name()
             assessment_id = self.generate_assessment_id()
 
+            # MAIN
             cursor.execute("""
                 INSERT INTO `tabBuyback Assessment`
-                (name, assessment_id, creation, owner, source,
+                (name, assessment_id, creation, owner,
                  customer, customer_name, mobile_no,
-                 company, item_group, item, item_name,
-                 brand, imei_serial, estimated_price, status)
-                VALUES (%s,%s,NOW(),%s,%s,%s,%s,%s,
-                        %s,%s,%s,%s,%s,%s,%s,'Draft')
+                 item, item_name, brand, imei_serial,
+                 estimated_price, status)
+                VALUES (%s,%s,NOW(),'Administrator',
+                        %s,%s,%s,%s,%s,%s,%s,%s,'Draft')
             """, (
-                name,
-                assessment_id,
-                payload.get("owner", "Administrator"),
-                payload.get("source", "Web"),
+                name, assessment_id,
                 payload["customer"],
                 payload["customer_name"],
                 payload["mobile_no"],
-                payload.get("company", ""),
-                payload.get("item_group", ""),
                 payload["item_code"],
                 payload["item_name"],
                 payload["brand"],
@@ -176,28 +121,107 @@ class BuybackRepository:
                 estimated_price
             ))
 
-            # OPTIONAL: save responses
+            # RESPONSES
             for idx, r in enumerate(payload.get("responses", []), start=1):
 
-                q = self.get_question_details(r["question_id"])
                 percent = self.get_price_percent(r["question_id"], r["answer_value"])
 
                 cursor.execute("""
                     INSERT INTO `tabBuyback Assessment Response`
                     (name, creation, owner, parent, parenttype, parentfield,
-                     idx, question_code, question_text,
-                     answer_value, answer_label, price_impact_percent)
-                    VALUES (%s,NOW(),%s,%s,'Buyback Assessment','responses',
-                            %s,%s,%s,%s,%s,%s)
+                     idx, question_code,
+                     answer_value, price_impact_percent)
+                    VALUES (%s,NOW(),'Administrator',%s,'Buyback Assessment','responses',
+                            %s,%s,%s,%s)
                 """, (
                     f"RESP-{uuid.uuid4().hex[:10]}",
-                    payload.get("owner", "Administrator"),
                     name,
                     idx,
                     r["question_id"],
-                    q["question_text"] if q else "",
                     r["answer_value"],
+                    percent
+                ))
+
+            conn.commit()
+            return name
+
+    # =========================
+    # CREATE FULL (RESP + DIAG)
+    # =========================
+    def create_full_assessment(self, payload, estimated_price):
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            name = self.generate_assessment_name()
+            assessment_id = self.generate_assessment_id()
+
+            # MAIN
+            cursor.execute("""
+                INSERT INTO `tabBuyback Assessment`
+                (name, assessment_id, creation, owner,
+                 customer, customer_name, mobile_no,
+                 item, item_name, brand, imei_serial,
+                 estimated_price, status)
+                VALUES (%s,%s,NOW(),'Administrator',
+                        %s,%s,%s,%s,%s,%s,%s,%s,'Draft')
+            """, (
+                name, assessment_id,
+                payload["customer"],
+                payload["customer_name"],
+                payload["mobile_no"],
+                payload["item_code"],
+                payload["item_name"],
+                payload["brand"],
+                payload["imei_serial"],
+                estimated_price
+            ))
+
+            # RESPONSES
+            for idx, r in enumerate(payload.get("responses", []), start=1):
+
+                percent = self.get_price_percent(r["question_id"], r["answer_value"])
+
+                cursor.execute("""
+                    INSERT INTO `tabBuyback Assessment Response`
+                    (name, creation, owner, parent, parenttype, parentfield,
+                     idx, question_code,
+                     answer_value, price_impact_percent)
+                    VALUES (%s,NOW(),'Administrator',%s,'Buyback Assessment','responses',
+                            %s,%s,%s,%s)
+                """, (
+                    f"RESP-{uuid.uuid4().hex[:10]}",
+                    name,
+                    idx,
+                    r["question_id"],
                     r["answer_value"],
+                    percent
+                ))
+
+            # =========================
+            # DIAGNOSTICS (FIXED)
+            # =========================
+            for idx, d in enumerate(payload.get("diagnostics", []), start=1):
+
+                percent = self.get_price_percent(
+                    d["test_code"],
+                    d["result"]
+                )
+
+                cursor.execute("""
+                    INSERT INTO `tabBuyback Assessment Diagnostic`
+                    (name, creation, owner, parent, parenttype, parentfield,
+                     idx, test, test_code, test_name, result, depreciation_percent)
+                    VALUES (%s, NOW(), 'Administrator', %s, 'Buyback Assessment', 'diagnostic_tests',
+                            %s, %s, %s, %s, %s, %s)
+                """, (
+                    f"DIAG-{uuid.uuid4().hex[:10]}",
+                    name,
+                    idx,
+                    d["test_code"],   # REQUIRED FIELD
+                    d["test_code"],
+                    d["test_name"],
+                    d["result"],
                     percent
                 ))
 
