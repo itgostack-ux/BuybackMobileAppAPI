@@ -50,31 +50,9 @@ def get_sub_categories_repo(category_id=None,item_group_id=None):
     return fetch_query(query,params)
 
 
-def get_manufacturers_repo():
-    return fetch_query("""
-        SELECT name,manufacturer_id,short_name,full_name
-        FROM `tabManufacturer`
-        WHERE IFNULL(ch_disabled,0)=0
-        AND IFNULL(ch_is_active,0)=1
-        ORDER BY manufacturer_id
-    """)
 
 
-def get_brands_repo(manufacturer=None):
 
-    query="""
-        SELECT name,brand_id,brand,ch_manufacturer
-        FROM `tabBrand`
-        WHERE IFNULL(ch_is_active,0)=1
-    """
-
-    params=[]
-
-    if manufacturer:
-        query+=" AND ch_manufacturer=%s"
-        params.append(manufacturer)
-
-    return fetch_query(query,params)
 
 
 
