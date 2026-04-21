@@ -59,31 +59,34 @@ def get_sub_categories_repo(category_id=None,item_group_id=None):
 def get_brands_by_subcategory_repo(item_group_id=None, category_id=None, sub_category_id=None):
     query = """
         SELECT DISTINCT
-            brand_id,
-            brand
-        FROM `tabCH Model`
-        WHERE IFNULL(disabled,0)=0
+            m.brand_id,
+            m.brand,
+            sc.sub_category_name,
+            sc.sub_category_id
+        FROM `tabCH Model` m
+        LEFT JOIN `tabCH Sub Category` sc
+            ON m.sub_category_id = sc.sub_category_id
+        WHERE IFNULL(m.disabled,0)=0
+        AND IFNULL(m.brand,'') != ''
     """
 
     params = []
 
     if item_group_id:
-        query += " AND item_group_id=%s"
+        query += " AND m.item_group_id=%s"
         params.append(item_group_id)
 
     if category_id:
-        query += " AND category_id=%s"
+        query += " AND m.category_id=%s"
         params.append(category_id)
 
     if sub_category_id:
-        query += " AND sub_category_id=%s"
+        query += " AND m.sub_category_id=%s"
         params.append(sub_category_id)
 
-    query += " ORDER BY brand"
+    query += " ORDER BY m.brand ASC"
 
     return fetch_query(query, params)
-
-
 
 
 

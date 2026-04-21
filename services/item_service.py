@@ -32,6 +32,10 @@ def get_brands_by_subcategory_service(
             sub_category_id
         )
     )
+
+
+
+    
 def get_models_filtered_service(
     item_group_id=None,
     category_id=None,
