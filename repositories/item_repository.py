@@ -84,50 +84,10 @@ def get_brands_by_subcategory_repo(item_group_id=None, category_id=None, sub_cat
     return fetch_query(query, params)
 
 
-def get_models_repo(brand_id=None):
-
-    query="""
-        SELECT name,model_id,model_name,brand_id
-        FROM `tabCH Model`
-        WHERE IFNULL(disabled,0)=0
-    """
-
-    params=[]
-
-    if brand_id:
-        query+=" AND brand_id=%s"
-        params.append(brand_id)
-
-    return fetch_query(query,params)
 
 
-def get_attributes_repo():
-    return fetch_query("""
-        SELECT name,attribute_name,numeric_values
-        FROM `tabItem Attribute`
-        WHERE IFNULL(disabled,0)=0
-        ORDER BY attribute_name
-    """)
 
 
-def get_model_spec_values_repo(model_id=None):
-
-    query="""
-        SELECT m.model_id,m.model_name,
-        s.spec,s.spec_value
-        FROM `tabCH Model` m
-        LEFT JOIN `tabCH Model Spec Value` s
-        ON s.parent=m.name
-        WHERE IFNULL(m.disabled,0)=0
-    """
-
-    params=[]
-
-    if model_id:
-        query+=" AND m.model_id=%s"
-        params.append(model_id)
-
-    return fetch_query(query,params)
 
 
 def get_model_with_spec_repo(model_id=None):
@@ -149,23 +109,6 @@ def get_model_with_spec_repo(model_id=None):
 
     return fetch_query(query,params)
 
-
-def get_items_repo(params):
-
-    return fetch_query("""
-        SELECT DISTINCT i.item_code,i.item_name
-        FROM `tabItem` i
-        JOIN `tabItem Variant Attribute` a
-        ON a.parent=i.name
-        WHERE i.disabled=0
-        AND i.ch_item_group_id=%s
-        AND i.ch_category_id=%s
-        AND i.ch_sub_category_id=%s
-        AND i.ch_brand_id=%s
-        AND i.ch_model_id=%s
-        AND a.attribute=%s
-        AND a.attribute_value=%s
-    """,params)
 
 def get_models_filtered_repo(
     item_group_id=None,
