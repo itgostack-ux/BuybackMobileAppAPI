@@ -15,7 +15,6 @@ def get_tests():
 
     return get_tests_controller()
 
-
 @router.get("/GetAppointmentTypes")
 def get_appointment_types():
 

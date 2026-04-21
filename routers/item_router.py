@@ -52,14 +52,9 @@ def get_models_by_filter(
     )
 
 
-
-
-
 @router.get("/GetModelWithSpecification")
 def get_model_with_spec(model_id:int|None=None):
     return get_model_with_spec_controller(model_id)
-
-
 
 
 @router.get("/GetModelAttributes")
