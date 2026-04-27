@@ -1,6 +1,7 @@
 from fastapi import APIRouter,Query
 from controllers.item_controller import *
 from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict
 router=APIRouter(prefix="/api/v1",tags=["Items"])
 
@@ -23,31 +24,19 @@ def get_sub_categories(category_id:int|None=None,item_group_id:int|None=None):
 
 
 
-
-@router.get("/GetBrandsBySubCategory")
-def get_brands_by_subcategory(
-    item_group_id: int | None = None,
-    category_id: int | None = None,
-    sub_category_id: int | None = None
+@router.get("/GetBrands")
+def get_brands(
+    item_group_id: int | None = None
 ):
-    return get_brands_by_subcategory_controller(
-        item_group_id,
-        category_id,
-        sub_category_id
-    )
+    return get_brands_by_subcategory_controller(item_group_id)
 
-
-@router.get("/GetModelsByBrandAndCategory")
+@router.get("/GetModelsByBrand")
 def get_models_by_filter(
     item_group_id: int | None = None,
-    category_id: int | None = None,
-    sub_category_id: int | None = None,
     brand_id: int | None = None
 ):
     return get_models_filtered_controller(
         item_group_id,
-        category_id,
-        sub_category_id,
         brand_id
     )
 
@@ -70,23 +59,19 @@ def get_attribute_values(
 
 class ItemFilterRequest(BaseModel):
     item_group_id: int
-    category_id: int
-    sub_category_id: int
     brand_id: int
     model_id: int
-    filters: Dict[str, str]
-
+    filters: Dict[str, str] = Field(default_factory=dict)
 
 @router.post("/GetItemsWithSpec")
 def get_items(payload: ItemFilterRequest):
     return get_items_controller(
         payload.item_group_id,
-        payload.category_id,
-        payload.sub_category_id,
         payload.brand_id,
         payload.model_id,
         payload.filters
     )
+
 @router.get("/api/v1/get-colors-by-storage")
 def get_colors_by_storage(
     model_id: int = Query(...),

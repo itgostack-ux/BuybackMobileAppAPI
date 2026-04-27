@@ -10,10 +10,12 @@ def fetch_query(query, params=None):
 
 def get_device_items_repo():
     return fetch_query("""
-        SELECT name,item_group_id,item_group_name,parent_item_group,is_group,lft,rgt
+        SELECT name, item_group_id, item_group_name, parent_item_group,
+               is_group, lft, rgt
         FROM `tabItem Group`
         WHERE IFNULL(ch_disabled,0)=0
         AND IFNULL(ch_is_active,0)=1
+        AND item_group_name = 'Mobiles'
         ORDER BY lft
     """)
 
@@ -55,17 +57,12 @@ def get_sub_categories_repo(category_id=None,item_group_id=None):
 
 
 
-
-def get_brands_by_subcategory_repo(item_group_id=None, category_id=None, sub_category_id=None):
+def get_brands_by_subcategory_repo(item_group_id=None):
     query = """
         SELECT DISTINCT
             m.brand_id,
-            m.brand,
-            sc.sub_category_name,
-            sc.sub_category_id
+            m.brand
         FROM `tabCH Model` m
-        LEFT JOIN `tabCH Sub Category` sc
-            ON m.sub_category_id = sc.sub_category_id
         WHERE IFNULL(m.disabled,0)=0
         AND IFNULL(m.brand,'') != ''
     """
@@ -76,20 +73,9 @@ def get_brands_by_subcategory_repo(item_group_id=None, category_id=None, sub_cat
         query += " AND m.item_group_id=%s"
         params.append(item_group_id)
 
-    if category_id:
-        query += " AND m.category_id=%s"
-        params.append(category_id)
-
-    if sub_category_id:
-        query += " AND m.sub_category_id=%s"
-        params.append(sub_category_id)
-
     query += " ORDER BY m.brand ASC"
 
     return fetch_query(query, params)
-
-
-
 
 
 
@@ -112,11 +98,8 @@ def get_model_with_spec_repo(model_id=None):
 
     return fetch_query(query,params)
 
-
 def get_models_filtered_repo(
     item_group_id=None,
-    category_id=None,
-    sub_category_id=None,
     brand_id=None
 ):
     query = """
@@ -134,14 +117,6 @@ def get_models_filtered_repo(
     if item_group_id:
         query += " AND item_group_id=%s"
         params.append(item_group_id)
-
-    if category_id:
-        query += " AND category_id=%s"
-        params.append(category_id)
-
-    if sub_category_id:
-        query += " AND sub_category_id=%s"
-        params.append(sub_category_id)
 
     if brand_id:
         query += " AND brand_id=%s"
@@ -175,11 +150,8 @@ def get_attribute_values_repo(model_id, spec):
             AND s.spec=%s
         ORDER BY s.spec_value
     """, (model_id, spec))
-
 def get_items_repo(
     item_group_id,
-    category_id,
-    sub_category_id,
     brand_id,
     model_id,
     filters: dict
@@ -187,8 +159,6 @@ def get_items_repo(
     conditions = []
     params = [
         item_group_id,
-        category_id,
-        sub_category_id,
         brand_id,
         model_id
     ]
@@ -207,19 +177,17 @@ def get_items_repo(
         WHERE
             i.disabled = 0
             AND i.ch_item_group_id = %s
-            AND i.ch_category_id = %s
-            AND i.ch_sub_category_id = %s
             AND i.ch_brand_id = %s
             AND i.ch_model_id = %s
-            AND ({' OR '.join(conditions)})
+            {"AND (" + " OR ".join(conditions) + ")" if conditions else ""}
         GROUP BY i.name, i.item_code, i.item_name
-        HAVING COUNT(DISTINCT a.attribute) = %s
+        { "HAVING COUNT(DISTINCT a.attribute) = %s" if conditions else "" }
     """
 
-    params.append(len(filters))
+    if conditions:
+        params.append(len(filters))
 
     return fetch_query(query, tuple(params))
-
 
 def get_colors_by_storage_repo(model_id: int, storage_value: str):
     try:

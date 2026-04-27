@@ -20,37 +20,23 @@ def get_sub_categories_service(category_id=None,item_group_id=None):
 def get_model_with_spec_service(model_id=None):
     return response(get_model_with_spec_repo(model_id))
 
-def get_brands_by_subcategory_service(
-    item_group_id=None,
-    category_id=None,
-    sub_category_id=None
-):
+def get_brands_by_subcategory_service(item_group_id=None):
     return response(
-        get_brands_by_subcategory_repo(
-            item_group_id,
-            category_id,
-            sub_category_id
-        )
+        get_brands_by_subcategory_repo(item_group_id)
     )
-
 
 
     
 def get_models_filtered_service(
     item_group_id=None,
-    category_id=None,
-    sub_category_id=None,
     brand_id=None
 ):
     return response(
         get_models_filtered_repo(
             item_group_id,
-            category_id,
-            sub_category_id,
             brand_id
         )
     )
-
 def get_model_distinct_attributes_service(model_id):
     return response(get_model_distinct_attributes_repo(model_id))
 
@@ -59,8 +45,6 @@ def get_attribute_values_service(model_id, spec):
 
 def get_items_service(
     item_group_id,
-    category_id,
-    sub_category_id,
     brand_id,
     model_id,
     filters
@@ -68,14 +52,11 @@ def get_items_service(
     return response(
         get_items_repo(
             item_group_id,
-            category_id,
-            sub_category_id,
             brand_id,
             model_id,
             filters
         )
     )
-
 
 
 def get_colors_by_storage_service(model_id: int, storage_value: str):
