@@ -3,32 +3,31 @@ from repositories.question_repository import (
     get_buyback_question_list_repo,
     get_automated_test_list_repo
 )
-
-
 def get_buyback_question_list_service():
     rows = get_buyback_question_list_repo()
 
     if not rows:
-        return {
-            "success": True,
-            "data": []
-        }
+        return {"success": True, "data": []}
 
-    question_map = {}
+    category_map = {}
 
     for row in rows:
+        category = row.get("QuestionCategory", "Others")
         qname = row["QuestionName"]
 
-        if qname not in question_map:
-            question_map[qname] = {
+        if category not in category_map:
+            category_map[category] = {}
+
+        if qname not in category_map[category]:
+            category_map[category][qname] = {
                 "QuestionName": qname,
                 "QuestionText": row["QuestionText"],
                 "QuestionType": row["QuestionType"],
                 "Options": []
             }
 
-        if row["OptionLabel"]:
-            question_map[qname]["Options"].append({
+        if row.get("OptionLabel"):
+            category_map[category][qname]["Options"].append({
                 "OptionLabel": row["OptionLabel"],
                 "OptionValue": row["OptionValue"],
                 "PriceImpactPercent": row["PriceImpactPercent"]
@@ -36,10 +35,15 @@ def get_buyback_question_list_service():
 
     return {
         "success": True,
-        "data": list(question_map.values())
+        "data": [
+            {
+                "Category": cat,
+                "Questions": list(qs.values())
+            }
+            for cat, qs in category_map.items()
+        ]
     }
-
-
+    
 def get_automated_test_list_service():
     rows = get_automated_test_list_repo()
 

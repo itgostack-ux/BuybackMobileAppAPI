@@ -10,13 +10,15 @@ def get_buyback_question_list_repo():
                     qb.name AS QuestionName,
                     qb.question_text AS QuestionText,
                     qb.question_type AS QuestionType,
+                    qb.question_category AS QuestionCategory,
                     opt.option_label AS OptionLabel,
                     opt.option_value AS OptionValue,
                     opt.price_impact_percent AS PriceImpactPercent
                 FROM `tabBuyback Question Bank` qb
                 LEFT JOIN `tabBuyback Question Option` opt
                     ON qb.name = opt.parent
-                WHERE qb.disabled = 0
+                WHERE qb.diagnosis_type = 'Customer Question'   -- ✅ FILTER
+                  AND qb.disabled = 0
                 ORDER BY qb.display_order, opt.idx
             """)
 
