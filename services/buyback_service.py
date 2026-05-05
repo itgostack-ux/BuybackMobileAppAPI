@@ -116,16 +116,47 @@ def create_full_buyback_service(payload: dict):
         "estimated_price": round(final_price, 2)
     }
 def get_buybacks_with_diagnostics_service():
-    data = repo.get_buybacks_with_diagnostics()
+    rows = repo.get_buybacks_with_diagnostics()
 
-    if not data:
+    if not rows:
         return {
             "success": False,
             "message": "No data found"
         }
 
+    grouped = {}
+
+    for row in rows:
+        name = row["assessment_name"]
+
+        # Create parent object once
+        if name not in grouped:
+            grouped[name] = {
+                "assessment_name": name,
+                "creation": row["creation"],
+                "customer": row["customer"],
+                "customer_name": row["customer_name"],
+                "mobile_no": row["mobile_no"],
+                "item": row["item"],
+                "item_name": row["item_name"],
+                "brand": row["brand"],
+                "imei_serial": row["imei_serial"],
+                "estimated_price": row["estimated_price"],
+                "status": row["status"],
+                "diagnostics": []
+            }
+
+        # Add diagnostics if exists
+        if row["test_code"]:
+            grouped[name]["diagnostics"].append({
+                "test_code": row["test_code"],
+                "test_name": row["test_name"],
+                "result": row["result"],
+                "depreciation_percent": row["depreciation_percent"]
+            })
+
     return {
         "success": True,
-        "count": len(data),
-        "data": data
+        "count": len(grouped),
+        "data": list(grouped.values())
     }
