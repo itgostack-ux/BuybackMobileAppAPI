@@ -30,6 +30,8 @@ class BuybackRequest(BaseModel):
     customer_name: str
     mobile_no: str = Field(..., pattern="^[0-9]{10}$")
 
+    ch_customer_id: Optional[str] = None
+
     item_code: str
     item_name: str
     brand: str
@@ -41,7 +43,6 @@ class BuybackRequest(BaseModel):
     owner: Optional[str] = "Administrator"
 
     responses: List[ResponseItem] = Field(..., min_items=1)
-
 
 class FullBuybackRequest(BuybackRequest):
     diagnostics: List[DiagnosticItem] = Field(default_factory=list)

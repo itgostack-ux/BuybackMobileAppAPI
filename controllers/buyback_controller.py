@@ -3,10 +3,10 @@ from services.buyback_service import (
     create_buyback_service,
     create_full_buyback_service
 )
-
+from services.buyback_service import get_buybacks_with_diagnostics_service
 
 # =========================================================
-# ✅ API 1: BASIC BUYBACK (RESPONSES ONLY)
+#  API 1: BASIC BUYBACK (RESPONSES ONLY)
 # =========================================================
 def create_buyback_controller(payload: dict):
 
@@ -87,7 +87,7 @@ def create_buyback_controller(payload: dict):
 
 
 # =========================================================
-# ✅ API 2: FULL BUYBACK (RESP + DIAGNOSTICS)
+#  API 2: FULL BUYBACK (RESP + DIAGNOSTICS)
 # =========================================================
 def create_full_buyback_controller(payload: dict):
 
@@ -176,3 +176,5 @@ def create_full_buyback_controller(payload: dict):
         )
 
     return result
+def get_buybacks_with_diagnostics_controller():
+    return get_buybacks_with_diagnostics_service()

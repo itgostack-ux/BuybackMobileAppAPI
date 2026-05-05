@@ -17,7 +17,7 @@ def get_buyback_question_list_repo():
                 FROM `tabBuyback Question Bank` qb
                 LEFT JOIN `tabBuyback Question Option` opt
                     ON qb.name = opt.parent
-                WHERE qb.diagnosis_type = 'Customer Question'   -- ✅ FILTER
+                WHERE qb.diagnosis_type = 'Customer Question'   
                   AND qb.disabled = 0
                 ORDER BY qb.display_order, opt.idx
             """)

@@ -115,3 +115,17 @@ def create_full_buyback_service(payload: dict):
         "floor_price": round(floor_price, 2),
         "estimated_price": round(final_price, 2)
     }
+def get_buybacks_with_diagnostics_service():
+    data = repo.get_buybacks_with_diagnostics()
+
+    if not data:
+        return {
+            "success": False,
+            "message": "No data found"
+        }
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data
+    }
