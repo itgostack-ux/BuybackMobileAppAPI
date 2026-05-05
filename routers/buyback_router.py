@@ -3,15 +3,17 @@ from fastapi import APIRouter, status, HTTPException
 from schemas.buyback_schema import (
     BuybackRequest,
     BuybackCreateResponse,
-    FullBuybackRequest
+    FullBuybackRequest,
+    SellNowRequest
 )
 
 from controllers.buyback_controller import (
     create_buyback_controller,
     create_full_buyback_controller,
-    get_buybacks_with_diagnostics_controller
+    get_buybacks_with_diagnostics_controller,
+    get_latest_buyback_by_ch_customer_controller
 )
-
+from controllers.buyback_controller import sell_now_controller
 router = APIRouter(
     prefix="/api/v1",
     tags=["Buyback"]
@@ -77,3 +79,30 @@ def get_buybacks_with_diagnostics(customer_id: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post(
+    "/buyback-sell-now",
+    summary="Mark Customer Interest (Sell Now)",
+    description="Marks customer as interested when Sell Now is clicked"
+)
+def sell_now(payload: SellNowRequest):
+    try:
+        result = sell_now_controller(payload.model_dump())
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("message")
+            )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}"
+        )
+
+@router.get("/latest-buyback/{ch_customer_id}")
+def get_latest_buyback(ch_customer_id: str):
+    return get_latest_buyback_by_ch_customer_controller(ch_customer_id)

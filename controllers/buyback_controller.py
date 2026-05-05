@@ -1,10 +1,11 @@
 from fastapi import HTTPException
 from services.buyback_service import (
     create_buyback_service,
-    create_full_buyback_service
+    create_full_buyback_service,
+    get_latest_buyback_by_ch_customer_service
 )
 from services.buyback_service import get_buybacks_with_diagnostics_service
-
+from services.buyback_service import sell_now_service
 # =========================================================
 #  API 1: BASIC BUYBACK (RESPONSES ONLY)
 # =========================================================
@@ -176,5 +177,73 @@ def create_full_buyback_controller(payload: dict):
         )
 
     return result
+
 def get_buybacks_with_diagnostics_controller():
     return get_buybacks_with_diagnostics_service()
+    
+# =========================================================
+# API 3: SELL NOW (MARK CUSTOMER INTERESTED)
+# =========================================================
+def sell_now_controller(payload: dict):
+
+    # ─────────────────────────────
+    # STEP 1: VALIDATION
+    # ─────────────────────────────
+    name = payload.get("name")
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="name (Buyback ID) is required"
+        )
+
+    # ─────────────────────────────
+    # STEP 2: CALL SERVICE
+    # ─────────────────────────────
+    try:
+        result = sell_now_service(payload)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}"
+        )
+
+    # ─────────────────────────────
+    # STEP 3: HANDLE FAILURE
+    # ─────────────────────────────
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Sell Now failed")
+        )
+
+    return result
+
+# =========================================================
+# API 4: GET LATEST BUYBACK BY CH CUSTOMER ID
+# =========================================================
+def get_latest_buyback_by_ch_customer_controller(ch_customer_id: str):
+
+    if not ch_customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="ch_customer_id is required"
+        )
+
+    try:
+        result = get_latest_buyback_by_ch_customer_service(ch_customer_id)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal Server Error: {str(e)}"
+        )
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=404,
+            detail=result.get("message", "No buyback found")
+        )
+
+    return result

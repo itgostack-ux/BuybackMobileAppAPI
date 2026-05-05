@@ -247,7 +247,7 @@ class BuybackRepository:
                 conn.rollback()
                 raise e
       # =========================
-    # GET BUYBACKS WITH DIAGNOSTICS
+    # GET BUYBACKS
     # =========================
     def get_buybacks_with_diagnostics(self):
         with get_db_connection() as conn:
@@ -275,5 +275,92 @@ class BuybackRepository:
                     ON a.name = d.parent
                 ORDER BY a.creation DESC
             """)
+
+            return cursor.fetchall()
+    
+    # =========================
+    # SELL NOW (FIXED)
+    # =========================
+    def mark_customer_interested_by_name(self, name):
+        name = name.strip()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            try:
+                cursor.execute("""
+                    SELECT customer_interested 
+                    FROM `tabBuyback Assessment`
+                    WHERE name = %s
+                """, (name,))
+                record = cursor.fetchone()
+
+                if not record:
+                    return {"success": False, "message": "Buyback not found"}
+
+                if record["customer_interested"] == 1:
+                    return {
+                        "success": True,
+                        "message": "Already marked as interested",
+                        "name": name
+                    }
+
+                cursor.execute("""
+                    UPDATE `tabBuyback Assessment`
+                    SET 
+                        customer_interested = 1,
+                        interested_at = NOW(),
+                        status = 'Interested'
+                    WHERE name = %s
+                """, (name,))
+
+                conn.commit()
+
+                return {
+                    "success": True,
+                    "message": "Customer marked as interested",
+                    "name": name
+                }
+
+            except Exception as e:
+                conn.rollback()
+                raise e
+
+
+    # =========================
+    # GET LATEST BUYBACK BY CH CUSTOMER
+    # =========================
+    def get_latest_buyback_by_ch_customer(self, ch_customer_id):
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT 
+                    a.name AS assessment_name,
+                    a.creation,
+                    a.customer,
+                    a.customer_name,
+                    a.mobile_no,
+                    a.item,
+                    a.item_name,
+                    a.brand,
+                    a.imei_serial,
+                    a.estimated_price,
+                    a.status,
+                    d.test_code,
+                    d.test_name,
+                    d.result,
+                    d.depreciation_percent
+                FROM `tabBuyback Assessment` a
+                LEFT JOIN `tabBuyback Assessment Diagnostic` d
+                    ON a.name = d.parent
+                WHERE a.name = (
+                    SELECT name
+                    FROM `tabBuyback Assessment`
+                    WHERE ch_customer_id = %s
+                    ORDER BY creation DESC
+                    LIMIT 1
+                )
+            """, (ch_customer_id,))
 
             return cursor.fetchall()

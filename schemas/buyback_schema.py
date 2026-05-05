@@ -92,3 +92,6 @@ class BuybackDetailedResponse(BaseModel):
 
     responses: List[BuybackResponseDetail] = Field(default_factory=list)
     diagnostics: List[BuybackDiagnosticDetail] = Field(default_factory=list)
+
+class SellNowRequest(BaseModel):
+    name: str
