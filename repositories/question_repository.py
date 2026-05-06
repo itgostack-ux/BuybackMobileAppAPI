@@ -36,7 +36,7 @@ def get_buyback_question_list_repo():
 # =========================
 def get_automated_test_list_repo():
     with get_db_connection() as conn:
-        cursor = conn.cursor(DictCursor)   # ✅ FIXED
+        cursor = conn.cursor(DictCursor)   # FIXED
 
         cursor.execute("""
             SELECT 
