@@ -17,6 +17,23 @@ def get_buyback_question_list_service():
     # Static category order
     category_order = ["General", "Physical", "Functional", "Accessories", "Warrenty"]
 
+    # Functional hardcoded order ONLY
+    functional_order = [
+        "front camera not working",
+        "back camera not working",
+        "volume button not working",
+        "finger touch not working",
+        "wifi not working",
+        "battery faulty",
+        "speaker faulty",
+        "power button not working",
+        "charging port not working",
+        "face sensor not working",
+        "silent button not working",
+        "audio receiver not working",
+        "camera glass broken"
+    ]
+
     category_map = OrderedDict()
 
     for row in rows:
@@ -35,6 +52,7 @@ def get_buyback_question_list_service():
                 "Options": []
             }
 
+        # Add Options
         if row.get("OptionValue") is not None:
             option_obj = {
                 "OptionLabel": row.get("OptionLabel"),
@@ -47,30 +65,47 @@ def get_buyback_question_list_service():
 
     final_data = []
 
-    # Static category order
+    # =========================================================
+    # CATEGORY PROCESSING
+    # =========================================================
     for category in category_order:
-        if category in category_map:
-            questions = category_map[category]
 
-            # Sort only General by DisplayOrder
-            if category == "General":
-                sorted_questions = sorted(
-                    questions.values(),
-                    key=lambda x: int(x.get("DisplayOrder") or 9999)
-                )
-                final_data.append({
-                    "Category": category,
-                    "Questions": sorted_questions
-                })
-            else:
-                final_data.append({
-                    "Category": category,
-                    "Questions": list(questions.values())
-                })
+        if category not in category_map:
+            continue
 
-    # Add any extra categories not in static list
+        questions = list(category_map[category].values())
+
+        # =====================================================
+        # FUNCTIONAL CATEGORY HARD CODE ORDER ONLY
+        # =====================================================
+        if category == "Functional":
+
+            ordered_questions = []
+
+            for order_text in functional_order:
+
+                for question in questions:
+
+                    question_text = question["QuestionText"].strip().lower()
+
+                    if question_text == order_text:
+                        ordered_questions.append(question)
+                        break
+
+            questions = ordered_questions
+
+        final_data.append({
+            "Category": category,
+            "Questions": questions
+        })
+
+    # =========================================================
+    # EXTRA CATEGORIES
+    # =========================================================
     for category, questions in category_map.items():
+
         if category not in category_order:
+
             final_data.append({
                 "Category": category,
                 "Questions": list(questions.values())
@@ -106,6 +141,7 @@ def get_automated_test_list_service():
                 "Options": []
             }
 
+        # Add Options
         if row.get("OptionValue") is not None:
             option_obj = {
                 "OptionLabel": row.get("OptionLabel"),
@@ -116,13 +152,8 @@ def get_automated_test_list_service():
             if option_obj not in result[qname]["Options"]:
                 result[qname]["Options"].append(option_obj)
 
-    sorted_result = sorted(
-        result.values(),
-        key=lambda x: int(x.get("DisplayOrder") or 9999)
-    )
-
     return {
         "success": True,
-        "count": len(sorted_result),
-        "data": sorted_result
+        "count": len(result),
+        "data": list(result.values())
     }
