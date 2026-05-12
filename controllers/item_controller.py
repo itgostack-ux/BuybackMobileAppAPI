@@ -54,9 +54,8 @@ def get_buyback_price_controller(item_code):
     return get_buyback_price_service(item_code)
 
 
-def get_device_variants_controller(
-    device_name
-):
+def get_device_variants_controller(device_name):
+
     return get_device_variants_service(
-        device_name
+        device_name=device_name
     )

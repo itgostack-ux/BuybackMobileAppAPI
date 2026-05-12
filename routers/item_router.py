@@ -81,7 +81,6 @@ def get_buyback_price(item_code: str = Query(...)):
     return get_buyback_price_controller(item_code)
 
 
-
 class DeviceVariantRequest(BaseModel):
     device_name: str
 
@@ -90,6 +89,7 @@ class DeviceVariantRequest(BaseModel):
 def get_device_variants(
     payload: DeviceVariantRequest
 ):
+
     return get_device_variants_controller(
-        payload.device_name
+        device_name=payload.device_name
     )

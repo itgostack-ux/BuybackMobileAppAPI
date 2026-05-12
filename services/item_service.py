@@ -73,56 +73,83 @@ def get_buyback_price_service(item_code):
     return response(get_buyback_price_repo(item_code))
 
 
-
+import re
 
 def parse_device_string(device_string):
 
-    storage = None
+    text = (device_string or "").lower().strip()
 
-    match = re.search(
-        r'(\d+\s?(GB|TB))',
-        device_string,
+    gb_values = re.findall(
+        r'(\d+\s?(?:gb|tb))',
+        text,
         re.IGNORECASE
     )
 
-    if match:
+    cleaned_values = []
 
-        storage = match.group(1).replace(
+    for value in gb_values:
+
+        cleaned_value = value.replace(
             " ",
             ""
-        )
+        ).lower()
 
-        model_name = device_string.replace(
-            match.group(0),
-            ""
-        ).strip()
+        cleaned_values.append(cleaned_value)
 
-    else:
+    ram = None
+    storage = None
 
-        model_name = device_string.strip()
+    if len(cleaned_values) >= 2:
+
+        ram = cleaned_values[0]
+        storage = cleaned_values[1]
+
+    elif len(cleaned_values) == 1:
+
+        storage = cleaned_values[0]
+
+    # -----------------------------------
+    # Remove GB/TB values safely
+    # -----------------------------------
+    model_name = re.sub(
+        r'\d+\s?(gb|tb)',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    model_name = model_name.replace("-", " ")
+    model_name = model_name.replace("_", " ")
+
+    model_name = " ".join(
+        model_name.split()
+    )
 
     return {
         "model_name": model_name,
+        "ram": ram,
         "storage": storage
     }
 
+# ---------------------------------------------------
+# DEVICE VARIANTS SERVICE
+# ---------------------------------------------------
 
-def get_device_variants_service(
-    device_name
-):
+def get_device_variants_service(device_name):
 
     parsed = parse_device_string(
         device_name
     )
 
     data = get_variants_by_model_storage_repo(
-        parsed["model_name"],
-        parsed["storage"]
+        device_name
     )
 
     return {
         "success": True,
+        "device_name": device_name,
         "model_name": parsed["model_name"],
+        "ram": parsed["ram"],
         "storage": parsed["storage"],
         "count": len(data),
         "variants": data

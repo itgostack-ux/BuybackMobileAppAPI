@@ -244,48 +244,200 @@ def get_buyback_price_repo(item_code):
         FROM `tabBuyback Price Master`
         WHERE item_code = %s
     """, (item_code,))
-def get_variants_by_model_storage_repo(
-    model_name,
-    storage
-):
-    return fetch_query("""
-        SELECT
+    import re
+
+import re
+
+import re
+
+
+def get_variants_by_model_storage_repo(device_name):
+    """
+    Examples:
+    ----------
+    poco f4 5g 8gb 128gb
+    Apple iPhone 11 128GB
+    samsung s23 ultra 12gb 256gb
+    """
+
+    text = (device_name or "").lower().strip()
+
+    # ------------------------------------------------
+    # Extract RAM & STORAGE
+    # ------------------------------------------------
+    gb_values = re.findall(
+        r'(\d+\s*(?:gb|tb))',
+        text,
+        re.IGNORECASE
+    )
+
+    ram = None
+    storage = None
+
+    cleaned_gb_values = []
+
+    for value in gb_values:
+
+        cleaned_value = value.replace(
+            " ",
+            ""
+        ).lower()
+
+        cleaned_gb_values.append(cleaned_value)
+
+    if len(cleaned_gb_values) >= 2:
+
+        ram = cleaned_gb_values[0]
+        storage = cleaned_gb_values[1]
+
+    elif len(cleaned_gb_values) == 1:
+
+        storage = cleaned_gb_values[0]
+
+    # ------------------------------------------------
+    # Remove RAM/STORAGE from Search
+    # ------------------------------------------------
+    clean_text = re.sub(
+        r'\d+\s*(gb|tb)',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    clean_text = clean_text.replace("-", " ")
+    clean_text = clean_text.replace("_", " ")
+
+    clean_text = " ".join(
+        clean_text.split()
+    )
+
+    # ------------------------------------------------
+    # Dynamic Search
+    # ------------------------------------------------
+    words = clean_text.split()
+
+    conditions = []
+    values = []
+
+    for word in words:
+
+        conditions.append("""
+            (
+                LOWER(i.item_name) LIKE %s
+                OR LOWER(IFNULL(i.brand, '')) LIKE %s
+                OR LOWER(IFNULL(m.model_name, '')) LIKE %s
+                OR LOWER(IFNULL(i.ch_sub_category, '')) LIKE %s
+                OR LOWER(IFNULL(i.ch_category, '')) LIKE %s
+                OR LOWER(IFNULL(i.ch_model, '')) LIKE %s
+            )
+        """)
+
+        like_value = f"%{word}%"
+
+        values.extend([
+            like_value,
+            like_value,
+            like_value,
+            like_value,
+            like_value,
+            like_value
+        ])
+
+    dynamic_sql = " AND ".join(conditions)
+
+    # ------------------------------------------------
+    # Final Query
+    # ------------------------------------------------
+    query = f"""
+        SELECT DISTINCT
+
             i.item_code,
             i.item_name,
+            i.brand,
+            i.ch_category,
+            i.ch_sub_category,
+            i.ch_model,
+
+            m.model_name,
+
+            ram_attr.attribute_value AS ram,
+            storage_attr.attribute_value AS storage,
             color.attribute_value AS color
 
         FROM `tabItem` i
 
-        JOIN `tabCH Model` m
+        LEFT JOIN `tabCH Model` m
             ON m.model_id = i.ch_model_id
 
-        JOIN `tabItem Variant Attribute` storage
-            ON storage.parent = i.item_code
+        LEFT JOIN `tabItem Variant Attribute` ram_attr
+            ON ram_attr.parent = i.item_code
+            AND ram_attr.attribute = 'RAM'
 
-        JOIN `tabItem Variant Attribute` color
+        LEFT JOIN `tabItem Variant Attribute` storage_attr
+            ON storage_attr.parent = i.item_code
+            AND storage_attr.attribute = 'Storage'
+
+        LEFT JOIN `tabItem Variant Attribute` color
             ON color.parent = i.item_code
+            AND color.attribute = 'Colour'
 
         WHERE
             i.disabled = 0
+    """
 
-            AND (
-                LOWER(m.model_name)
-                    LIKE LOWER(CONCAT('%%', %s, '%%'))
+    # ------------------------------------------------
+    # Dynamic Search Filter
+    # ------------------------------------------------
+    if dynamic_sql:
+        query += f" AND ({dynamic_sql})"
 
-                OR
+    # ------------------------------------------------
+    # RAM Filter
+    # ------------------------------------------------
+    query += """
+        AND (
+            %s IS NULL
 
-                LOWER(%s)
-                    LIKE LOWER(CONCAT('%%', m.model_name, '%%'))
-            )
+            OR LOWER(IFNULL(ram_attr.attribute_value, ''))
+                = LOWER(%s)
+        )
+    """
 
-            AND storage.attribute = 'Storage'
-            AND storage.attribute_value = %s
+    # ------------------------------------------------
+    # STORAGE Filter
+    # ------------------------------------------------
+    query += """
+        AND (
+            %s IS NULL
 
-            AND color.attribute = 'Colour'
+            OR LOWER(IFNULL(storage_attr.attribute_value, ''))
+                = LOWER(%s)
+        )
+    """
 
-        ORDER BY color.attribute_value
-    """, (
-        model_name,
-        model_name,
-        storage
-    ))
+    # ------------------------------------------------
+    # Order
+    # ------------------------------------------------
+    query += """
+        ORDER BY
+            i.item_name ASC
+    """
+
+    # ------------------------------------------------
+    # Params
+    # ------------------------------------------------
+    params = (
+        values
+        + [
+            ram,
+            ram,
+
+            storage,
+            storage
+        ]
+    )
+
+    return fetch_query(
+        query,
+        tuple(params)
+    )
