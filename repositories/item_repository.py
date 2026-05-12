@@ -244,3 +244,48 @@ def get_buyback_price_repo(item_code):
         FROM `tabBuyback Price Master`
         WHERE item_code = %s
     """, (item_code,))
+def get_variants_by_model_storage_repo(
+    model_name,
+    storage
+):
+    return fetch_query("""
+        SELECT
+            i.item_code,
+            i.item_name,
+            color.attribute_value AS color
+
+        FROM `tabItem` i
+
+        JOIN `tabCH Model` m
+            ON m.model_id = i.ch_model_id
+
+        JOIN `tabItem Variant Attribute` storage
+            ON storage.parent = i.item_code
+
+        JOIN `tabItem Variant Attribute` color
+            ON color.parent = i.item_code
+
+        WHERE
+            i.disabled = 0
+
+            AND (
+                LOWER(m.model_name)
+                    LIKE LOWER(CONCAT('%%', %s, '%%'))
+
+                OR
+
+                LOWER(%s)
+                    LIKE LOWER(CONCAT('%%', m.model_name, '%%'))
+            )
+
+            AND storage.attribute = 'Storage'
+            AND storage.attribute_value = %s
+
+            AND color.attribute = 'Colour'
+
+        ORDER BY color.attribute_value
+    """, (
+        model_name,
+        model_name,
+        storage
+    ))

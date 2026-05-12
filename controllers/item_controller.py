@@ -52,3 +52,11 @@ def get_colors_by_storage_controller(model_id: int, storage_value: str):
 
 def get_buyback_price_controller(item_code):
     return get_buyback_price_service(item_code)
+
+
+def get_device_variants_controller(
+    device_name
+):
+    return get_device_variants_service(
+        device_name
+    )

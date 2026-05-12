@@ -23,7 +23,7 @@ def save_customer_repo(
 
                 is_update = False
 
-                # ✅ Check existing customer
+                #  Check existing customer
                 if customer_id:
                     cursor.execute("""
                         SELECT name FROM tabCustomer
@@ -32,7 +32,7 @@ def save_customer_repo(
                     if cursor.fetchone():
                         is_update = True
 
-                # ✅ Duplicate Mobile Check
+                #  Duplicate Mobile Check
                 if is_update:
                     cursor.execute("""
                         SELECT name FROM tabCustomer
@@ -151,7 +151,7 @@ def save_customer_repo(
 
                     is_primary = addr.get("is_primary_address", 0)
 
-                    # ✅ Ensure only one primary
+                    #  Ensure only one primary
                     if is_primary == 1:
                         if primary_found:
                             is_primary = 0
@@ -199,7 +199,7 @@ def save_customer_repo(
                         now
                     ))
 
-                    # ✅ Dynamic Link (CRITICAL FIX)
+                    #  Dynamic Link (CRITICAL FIX)
                     cursor.execute("""
                         INSERT INTO `tabDynamic Link` (
                             name,

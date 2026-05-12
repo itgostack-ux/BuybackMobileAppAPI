@@ -44,7 +44,7 @@ def get_automated_test_list_repo():
                 qb.question_text AS QuestionText,
                 qb.question_type AS QuestionType,
                 qb.question_category AS QuestionCategory,
-                qb.display_order AS DisplayOrder,   -- ✅ ADD THIS
+                qb.display_order AS DisplayOrder,   --  ADD THIS
                 opt.option_label AS OptionLabel,
                 opt.option_value AS OptionValue,
                 opt.price_impact_percent AS PriceImpactPercent,

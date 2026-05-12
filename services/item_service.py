@@ -1,4 +1,5 @@
 from repositories.item_repository import *
+import re
 
 
 def response(data):
@@ -70,3 +71,59 @@ def get_colors_by_storage_service(model_id: int, storage_value: str):
 
 def get_buyback_price_service(item_code):
     return response(get_buyback_price_repo(item_code))
+
+
+
+
+def parse_device_string(device_string):
+
+    storage = None
+
+    match = re.search(
+        r'(\d+\s?(GB|TB))',
+        device_string,
+        re.IGNORECASE
+    )
+
+    if match:
+
+        storage = match.group(1).replace(
+            " ",
+            ""
+        )
+
+        model_name = device_string.replace(
+            match.group(0),
+            ""
+        ).strip()
+
+    else:
+
+        model_name = device_string.strip()
+
+    return {
+        "model_name": model_name,
+        "storage": storage
+    }
+
+
+def get_device_variants_service(
+    device_name
+):
+
+    parsed = parse_device_string(
+        device_name
+    )
+
+    data = get_variants_by_model_storage_repo(
+        parsed["model_name"],
+        parsed["storage"]
+    )
+
+    return {
+        "success": True,
+        "model_name": parsed["model_name"],
+        "storage": parsed["storage"],
+        "count": len(data),
+        "variants": data
+    }

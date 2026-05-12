@@ -21,9 +21,6 @@ def get_sub_categories(category_id:int|None=None,item_group_id:int|None=None):
     return get_sub_categories_controller(category_id,item_group_id)
 
 
-
-
-
 @router.get("/GetBrands")
 def get_brands(
     item_group_id: int | None = None
@@ -82,3 +79,17 @@ def get_colors_by_storage(
 @router.get("/GetBuybackPrice")
 def get_buyback_price(item_code: str = Query(...)):
     return get_buyback_price_controller(item_code)
+
+
+
+class DeviceVariantRequest(BaseModel):
+    device_name: str
+
+
+@router.post("/GetDeviceVariants")
+def get_device_variants(
+    payload: DeviceVariantRequest
+):
+    return get_device_variants_controller(
+        payload.device_name
+    )
