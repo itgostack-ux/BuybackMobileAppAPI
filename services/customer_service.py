@@ -3,7 +3,8 @@ from repositories.customer_repository import (
     get_customers_repo,
     get_customer_by_mobile_repo,
     get_customer_by_ch_customer_id_repo,
-    get_default_payment_account_repo
+    get_default_payment_account_repo,
+    validate_gofix_customer_repo
 )
 from repositories.customer_repository import get_all_customers_repo
 
@@ -87,5 +88,22 @@ def get_default_payment_account_service(ch_customer_id: int):
 
     return {
         "success": True,
+        "data": data
+    }
+
+
+def validate_gofix_customer_service(mobile_no: str):
+
+    data = validate_gofix_customer_repo(mobile_no)
+
+    if not data:
+        return {
+            "success": False,
+            "message": "Customer not found in GOFIX"
+        }
+
+    return {
+        "success": True,
+        "message": "Customer exists in GOFIX",
         "data": data
     }

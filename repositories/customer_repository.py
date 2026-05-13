@@ -2,6 +2,9 @@ from datetime import datetime
 from fastapi import HTTPException
 from core.database import get_db_connection
 import uuid
+import requests
+from fastapi import HTTPException
+
 
 def save_customer_repo(
     customer_id=None,
@@ -74,19 +77,19 @@ def save_customer_repo(
                         customer_id
                     ))
 
-                    # ❌ Delete old payment accounts
+                    #  Delete old payment accounts
                     cursor.execute("""
                         DELETE FROM `tabCH Customer Payment Account`
                         WHERE parent=%s
                     """, (customer_id,))
 
-                    # ❌ Delete old dynamic links
+                    #  Delete old dynamic links
                     cursor.execute("""
                         DELETE FROM `tabDynamic Link`
                         WHERE link_name=%s AND link_doctype='Customer'
                     """, (customer_id,))
 
-                    # ❌ Delete old addresses
+                    #  Delete old addresses
                     cursor.execute("""
                         DELETE FROM tabAddress
                         WHERE name LIKE %s
@@ -278,22 +281,6 @@ def save_customer_repo(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -531,3 +518,87 @@ def get_default_payment_account_repo(ch_customer_id):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+import requests
+from fastapi import HTTPException
+
+BASE_URL = "https://dotsmart-002-site1.gtempurl.com"
+
+
+def validate_gofix_customer_repo(mobile_no):
+
+    try:
+
+        # ====================================
+        # GOFIX VALIDATION
+        # ====================================
+        gofix_data = None
+
+        try:
+
+            endpoint = "/ViewCustomerByPhoneNo"
+
+            url = f"{BASE_URL}{endpoint}?phoneNo={mobile_no}"
+
+            response = requests.get(
+                url,
+                timeout=10
+            )
+
+            if response.status_code == 200:
+
+                response_data = response.json()
+
+                if response_data:
+                    gofix_data = response_data
+
+        except Exception:
+            gofix_data = None
+
+        # ====================================
+        # BUYBACK VALIDATION
+        # ====================================
+        buyback_data = None
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT
+                        ch_customer_id,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        disabled
+                    FROM tabCustomer
+                    WHERE mobile_no = %s
+                    LIMIT 1
+                """, (mobile_no,))
+
+                buyback_data = cursor.fetchone()
+
+        # ====================================
+        # CUSTOMER NOT FOUND
+        # ====================================
+        if not gofix_data and not buyback_data:
+
+            return {
+                "success": False,
+                "message": "Customer not found in GOFIX and BUYBACK"
+            }
+
+        # ====================================
+        # FINAL RESPONSE
+        # ====================================
+        return {
+            "success": True,
+            "gofix_response": gofix_data,
+            "buyback_response": buyback_data
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )

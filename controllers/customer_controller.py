@@ -3,7 +3,9 @@ from services.customer_service import (
     get_customers_service,
     get_all_customers_service,
     get_customer_by_ch_customer_id_service,
-    get_default_payment_account_service
+    get_default_payment_account_service,
+    get_customer_by_mobile_service,
+    validate_gofix_customer_service
 )
 
 
@@ -28,3 +30,7 @@ def get_customer_by_ch_customer_id_controller(ch_customer_id: int):
 
 def get_default_payment_account_controller(ch_customer_id: int):
     return get_default_payment_account_service(ch_customer_id)
+
+
+def validate_gofix_customer_controller(mobile_no: str):
+    return validate_gofix_customer_service(mobile_no)

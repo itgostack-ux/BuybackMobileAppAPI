@@ -8,7 +8,8 @@ from controllers.customer_controller import (
     get_customers_controller,
     get_all_customers_controller,
     get_customer_by_mobile_controller,
-    get_customer_by_ch_customer_id_controller
+    get_customer_by_ch_customer_id_controller,
+    validate_gofix_customer_controller
 )
 
 router = APIRouter(
@@ -57,3 +58,10 @@ def get_default_payment_account_api(
     ch_customer_id: int = Query(...)
 ):
     return get_default_payment_account_controller(ch_customer_id)
+
+
+@router.get("/ValidateGoFixCustomer")
+def validate_gofix_customer_api(
+    mobile_no: str = Query(...)
+):
+    return validate_gofix_customer_controller(mobile_no)
