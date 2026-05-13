@@ -59,3 +59,13 @@ def get_device_variants_controller(device_name):
     return get_device_variants_service(
         device_name=device_name
     )
+
+def get_model_variants_controller(
+    model_id,
+    attributes
+):
+
+    return get_model_variants_service(
+        model_id,
+        attributes
+    )

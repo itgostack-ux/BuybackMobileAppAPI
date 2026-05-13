@@ -441,3 +441,85 @@ def get_variants_by_model_storage_repo(device_name):
         query,
         tuple(params)
     )
+
+def get_model_variants_repo(
+    model_id,
+    attributes
+):
+
+    # -----------------------------------
+    # Single Attribute
+    # -----------------------------------
+    if len(attributes) == 1:
+
+        query = """
+            SELECT DISTINCT
+
+                s.spec_value AS storage,
+                s.spec_value AS variant
+
+            FROM `tabCH Model Spec Value` s
+
+            INNER JOIN `tabCH Model` m
+                ON m.name = s.parent
+
+            WHERE
+                m.model_id = %s
+                AND s.spec = %s
+
+            ORDER BY s.spec_value
+        """
+
+        return fetch_query(
+            query,
+            (
+                model_id,
+                attributes[0]
+            )
+        )
+
+    # -----------------------------------
+    # RAM + STORAGE
+    # -----------------------------------
+    elif len(attributes) == 2:
+
+        query = """
+            SELECT DISTINCT
+
+                a.spec_value AS ram,
+                b.spec_value AS storage,
+
+                CONCAT(
+                    a.spec_value,
+                    ' / ',
+                    b.spec_value
+                ) AS variant
+
+            FROM `tabCH Model Spec Value` a
+
+            INNER JOIN `tabCH Model Spec Value` b
+                ON a.parent = b.parent
+
+            INNER JOIN `tabCH Model` m
+                ON m.name = a.parent
+
+            WHERE
+                m.model_id = %s
+                AND a.spec = %s
+                AND b.spec = %s
+
+            ORDER BY
+                a.spec_value,
+                b.spec_value
+        """
+
+        return fetch_query(
+            query,
+            (
+                model_id,
+                attributes[0],
+                attributes[1]
+            )
+        )
+
+    return []

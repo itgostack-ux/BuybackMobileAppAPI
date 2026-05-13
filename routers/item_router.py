@@ -93,3 +93,17 @@ def get_device_variants(
     return get_device_variants_controller(
         device_name=payload.device_name
     )
+
+class ModelVariantRequest(BaseModel):
+    model_id: int
+    attributes: list[str]
+
+@router.post("/GetModelVariants")
+def get_model_variants(
+    payload: ModelVariantRequest
+):
+
+    return get_model_variants_controller(
+        model_id=payload.model_id,
+        attributes=payload.attributes
+    )

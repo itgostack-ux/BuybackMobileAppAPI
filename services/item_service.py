@@ -154,3 +154,19 @@ def get_device_variants_service(device_name):
         "count": len(data),
         "variants": data
     }
+
+def get_model_variants_service(
+    model_id,
+    attributes
+):
+
+    data = get_model_variants_repo(
+        model_id,
+        attributes
+    )
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data
+    }
