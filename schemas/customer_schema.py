@@ -26,6 +26,7 @@ class PaymentAccountSchema(BaseModel):
 
 
 class CustomerPayload(BaseModel):
+
     customer_id: Optional[str] = None
 
     customer_name: str = Field(
@@ -43,23 +44,55 @@ class CustomerPayload(BaseModel):
     )
 
     email_id: Optional[EmailStr] = None
+
     disabled: Optional[int] = 0
 
+    owner: Optional[str] = None
+
+    modified_by: Optional[str] = None
+
     addresses: List[AddressSchema] = Field(default_factory=list)
+
     payment_accounts: List[PaymentAccountSchema] = Field(default_factory=list)
 
+    # ====================================
+    # CUSTOMER NAME VALIDATION
+    # ====================================
     @field_validator("customer_name")
     @classmethod
     def validate_customer_name(cls, value):
-        if not value.strip():
-            raise ValueError("Customer name cannot be empty")
-        return value.strip()
 
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Customer name cannot be empty"
+            )
+
+        return value
+
+    # ====================================
+    # MOBILE VALIDATION
+    # ====================================
     @field_validator("mobile_no")
     @classmethod
     def validate_mobile_no(cls, value):
-        if not value.strip():
-            raise ValueError("Mobile number cannot be empty")
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Mobile number cannot be empty"
+            )
+
         if not value.isdigit():
-            raise ValueError("Mobile number must contain digits only")
-        return value.strip()
+            raise ValueError(
+                "Mobile number must contain digits only"
+            )
+
+        if len(value) < 10 or len(value) > 15:
+            raise ValueError(
+                "Mobile number must be between 10 and 15 digits"
+            )
+
+        return value
