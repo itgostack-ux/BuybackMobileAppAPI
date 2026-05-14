@@ -523,3 +523,70 @@ def get_model_variants_repo(
         )
 
     return []
+
+
+def get_variants_by_ram_storage_repo(
+    model_id,
+    ram=None,
+    storage=None
+):
+
+    query = """
+        SELECT DISTINCT
+
+            ram.spec_value AS ram,
+            storage.spec_value AS storage,
+            color.spec_value AS color
+
+        FROM `tabCH Model` m
+
+        LEFT JOIN `tabCH Model Spec Value` ram
+            ON ram.parent = m.name
+            AND ram.spec = 'RAM'
+
+        LEFT JOIN `tabCH Model Spec Value` storage
+            ON storage.parent = m.name
+            AND storage.spec = 'Storage'
+
+        LEFT JOIN `tabCH Model Spec Value` color
+            ON color.parent = m.name
+            AND color.spec = 'Colour'
+
+        WHERE
+            m.model_id = %s
+    """
+
+    params = [model_id]
+
+    # -----------------------------
+    # RAM FILTER
+    # -----------------------------
+    if ram:
+        query += """
+            AND ram.spec_value = %s
+        """
+        params.append(ram)
+
+    # -----------------------------
+    # STORAGE FILTER
+    # -----------------------------
+    if storage:
+        query += """
+            AND storage.spec_value = %s
+        """
+        params.append(storage)
+
+    # -----------------------------
+    # ORDER
+    # -----------------------------
+    query += """
+        ORDER BY
+            ram.spec_value,
+            storage.spec_value,
+            color.spec_value
+    """
+
+    return fetch_query(
+        query,
+        tuple(params)
+    )

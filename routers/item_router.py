@@ -107,3 +107,16 @@ def get_model_variants(
         model_id=payload.model_id,
         attributes=payload.attributes
     )
+
+@router.get("/GetVariantsByRamStorage")
+def get_variants_by_ram_storage(
+    model_id: int = Query(...),
+    ram: str | None = None,
+    storage: str | None = None
+):
+
+    return get_variants_by_ram_storage_controller(
+        model_id,
+        ram,
+        storage
+    )

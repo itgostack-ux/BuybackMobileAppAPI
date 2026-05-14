@@ -523,8 +523,6 @@ import requests
 from fastapi import HTTPException
 
 BASE_URL = "https://dotsmart-002-site1.gtempurl.com"
-
-
 def validate_gofix_customer_repo(mobile_no):
 
     try:
@@ -578,23 +576,48 @@ def validate_gofix_customer_repo(mobile_no):
                 buyback_data = cursor.fetchone()
 
         # ====================================
-        # CUSTOMER NOT FOUND
+        # RESPONSE
         # ====================================
-        if not gofix_data and not buyback_data:
+
+        # GOFIX + BUYBACK
+        if gofix_data and buyback_data:
 
             return {
-                "success": False,
-                "message": "Customer not found in GOFIX and BUYBACK"
+                "gofix_message": "Customer found in GOFIX",
+                "buyback_message": "Customer found in BUYBACK",
+                "gofix_response": gofix_data,
+                "buyback_response": buyback_data
             }
 
-        # ====================================
-        # FINAL RESPONSE
-        # ====================================
-        return {
-            "success": True,
-            "gofix_response": gofix_data,
-            "buyback_response": buyback_data
-        }
+        # GOFIX ONLY
+        elif gofix_data and not buyback_data:
+
+            return {
+                "gofix_message": "Customer found in GOFIX",
+                "buyback_message": "Customer not found in BUYBACK",
+                "gofix_response": gofix_data,
+                "buyback_response": None
+            }
+
+        # BUYBACK ONLY
+        elif buyback_data and not gofix_data:
+
+            return {
+                "gofix_message": "Customer not found in GOFIX",
+                "buyback_message": "Customer found in BUYBACK",
+                "gofix_response": None,
+                "buyback_response": buyback_data
+            }
+
+        # CUSTOMER NOT FOUND
+        else:
+
+            return {
+                "gofix_message": "Customer not found in GOFIX",
+                "buyback_message": "Customer not found in BUYBACK",
+                "gofix_response": None,
+                "buyback_response": None
+            }
 
     except Exception as e:
 

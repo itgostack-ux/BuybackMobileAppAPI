@@ -69,3 +69,15 @@ def get_model_variants_controller(
         model_id,
         attributes
     )
+
+def get_variants_by_ram_storage_controller(
+    model_id,
+    ram=None,
+    storage=None
+):
+
+    return get_variants_by_ram_storage_service(
+        model_id,
+        ram,
+        storage
+    )

@@ -170,3 +170,21 @@ def get_model_variants_service(
         "count": len(data),
         "data": data
     }
+
+def get_variants_by_ram_storage_service(
+    model_id,
+    ram=None,
+    storage=None
+):
+
+    data = get_variants_by_ram_storage_repo(
+        model_id,
+        ram,
+        storage
+    )
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data
+    }
