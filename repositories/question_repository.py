@@ -58,3 +58,67 @@ def get_automated_test_list_repo():
         """)
 
         return cursor.fetchall()
+
+# =========================================================
+# GET MODEL BASED QUESTIONS
+# =========================================================
+def get_buyback_questions_repo(item_code):
+
+    with get_db_connection() as conn:
+
+        cursor = conn.cursor(DictCursor)
+
+        cursor.execute("""
+            SELECT
+                p.item_code,
+                p.item_name,
+
+                q.idx AS display_order,
+                q.question,
+                q.question_text,
+                q.question_code
+
+            FROM `tabBuyback Item Question Map` p
+
+            INNER JOIN
+            `tabBuyback Item Question Map Detail` q
+                ON q.parent = p.name
+
+            WHERE p.item_code = %s
+
+            ORDER BY q.idx
+        """, (item_code,))
+
+        return cursor.fetchall()
+
+# =========================================================
+# GET MODEL BASED TESTS
+# =========================================================
+def get_buyback_tests_repo(item_code):
+
+    with get_db_connection() as conn:
+
+        cursor = conn.cursor(DictCursor)
+
+        cursor.execute("""
+            SELECT
+                p.item_code,
+                p.item_name,
+
+                t.idx AS display_order,
+                t.test,
+                t.test_name,
+                t.test_code
+
+            FROM `tabBuyback Item Question Map` p
+
+            INNER JOIN
+            `tabBuyback Item Test Map Detail` t
+                ON t.parent = p.name
+
+            WHERE p.item_code = %s
+
+            ORDER BY t.idx
+        """, (item_code,))
+
+        return cursor.fetchall()
