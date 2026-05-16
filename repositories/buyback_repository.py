@@ -14,9 +14,12 @@ class BuybackRepository:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
-                SELECT current_market_price, d_grade_oow_11
+                SELECT
+                    current_market_price,
+                    d_grade_oow_11
                 FROM `tabBuyback Price Master`
-                WHERE item_code = %s AND is_active = 1
+                WHERE item_code = %s
+                  AND is_active = 1
                 LIMIT 1
             """, (item_code,))
 
@@ -32,17 +35,20 @@ class BuybackRepository:
             cursor.execute("""
                 SELECT d_grade_oow_11
                 FROM `tabBuyback Price Master`
-                WHERE item_code = %s AND is_active = 1
+                WHERE item_code = %s
+                  AND is_active = 1
                 LIMIT 1
             """, (item_code,))
 
             result = cursor.fetchone()
+
             return float(result["d_grade_oow_11"]) if result else 0
 
     # =========================
-    # COMMON % (RESP + DIAG)
+    # COMMON %
     # =========================
     def get_price_percent(self, question_id, answer_value):
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -50,34 +56,47 @@ class BuybackRepository:
                 SELECT price_impact_percent
                 FROM `tabBuyback Question Option`
                 WHERE parent = %s
-                AND TRIM(LOWER(option_value)) = TRIM(LOWER(%s))
+                  AND TRIM(LOWER(option_value)) =
+                      TRIM(LOWER(%s))
                 LIMIT 1
             """, (question_id, answer_value))
 
             result = cursor.fetchone()
+
             return float(result["price_impact_percent"]) if result else 0
 
     # =========================
     # GENERATE NAME
     # =========================
     def generate_assessment_name(self):
+
         year = datetime.now().strftime("%Y")
 
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
-                SELECT name FROM `tabBuyback Assessment`
+                SELECT name
+                FROM `tabBuyback Assessment`
                 WHERE name LIKE %s
-                ORDER BY name DESC LIMIT 1
+                ORDER BY name DESC
+                LIMIT 1
             """, (f"BBA-{year}-%",))
 
             result = cursor.fetchone()
-            number = int(result["name"].split("-")[-1]) + 1 if result else 1
 
-        return f"BBA-{year}-{str(number).zfill(5)}"
+            number = (
+                int(result["name"].split("-")[-1]) + 1
+                if result else 1
+            )
 
+            return f"BBA-{year}-{str(number).zfill(5)}"
+
+    # =========================
+    # GENERATE ID
+    # =========================
     def generate_assessment_id(self):
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -87,12 +106,14 @@ class BuybackRepository:
             """)
 
             result = cursor.fetchone()
+
             return (result["max_id"] or 0) + 1
 
     # =========================
-    # CREATE BASIC (RESP ONLY)
+    # CREATE BASIC
     # =========================
     def create_assessment(self, payload, estimated_price):
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -100,46 +121,125 @@ class BuybackRepository:
             assessment_id = self.generate_assessment_id()
 
             try:
-                # MAIN
+
+                print("PAYLOAD:", payload)
+                print("ESTIMATED PRICE:", estimated_price)
+
+                # =========================
+                # MAIN INSERT
+                # =========================
                 cursor.execute("""
                     INSERT INTO `tabBuyback Assessment`
-                    (name, assessment_id, creation, owner,
-                     customer, customer_name, mobile_no,
-                     ch_customer_id,
-                     item, item_name, brand, imei_serial,
-                     estimated_price, status)
-                    VALUES (%s,%s,NOW(),'Administrator',
-                            %s,%s,%s,
-                            %s,
-                            %s,%s,%s,%s,%s,'Draft')
+                    (
+                        name,
+                        assessment_id,
+                        creation,
+                        owner,
+
+                        source,
+                        company,
+                        item_group,
+
+                        customer,
+                        customer_name,
+                        mobile_no,
+                        ch_customer_id,
+
+                        item,
+                        item_name,
+                        brand,
+                        imei_serial,
+
+                        estimated_price,
+                        status
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        NOW(),
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        'Draft'
+                    )
                 """, (
                     name,
                     assessment_id,
+                    payload.get("owner", "Administrator"),
+
+                    payload.get("source"),
+                    payload.get("company"),
+                    payload.get("item_group"),
+
                     payload["customer"],
                     payload["customer_name"],
                     payload["mobile_no"],
-                    payload.get("ch_customer_id"),   #FIXED
+                    payload["ch_customer_id"],
+
                     payload["item_code"],
                     payload["item_name"],
                     payload["brand"],
                     payload["imei_serial"],
+
                     estimated_price
                 ))
 
+                # =========================
                 # RESPONSES
-                for idx, r in enumerate(payload.get("responses", []), start=1):
+                # =========================
+                for idx, r in enumerate(
+                    payload.get("responses", []),
+                    start=1
+                ):
+
                     percent = self.get_price_percent(
                         r["question_id"],
                         r["answer_value"]
                     )
 
                     cursor.execute("""
-                        INSERT INTO `tabBuyback Assessment Response`
-                        (name, creation, owner, parent, parenttype, parentfield,
-                         idx, question_code,
-                         answer_value, price_impact_percent)
-                        VALUES (%s,NOW(),'Administrator',%s,'Buyback Assessment','responses',
-                                %s,%s,%s,%s)
+                        INSERT INTO
+                        `tabBuyback Assessment Response`
+                        (
+                            name,
+                            creation,
+                            owner,
+                            parent,
+                            parenttype,
+                            parentfield,
+                            idx,
+                            question_code,
+                            answer_value,
+                            price_impact_percent
+                        )
+                        VALUES
+                        (
+                            %s,
+                            NOW(),
+                            'Administrator',
+                            %s,
+                            'Buyback Assessment',
+                            'responses',
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        )
                     """, (
                         f"RESP-{uuid.uuid4().hex[:10]}",
                         name,
@@ -150,16 +250,22 @@ class BuybackRepository:
                     ))
 
                 conn.commit()
+
                 return name
 
             except Exception as e:
+
                 conn.rollback()
+
+                print("ERROR:", repr(e))
+
                 raise e
 
     # =========================
-    # CREATE FULL (RESP + DIAG)
+    # CREATE FULL
     # =========================
     def create_full_assessment(self, payload, estimated_price):
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
@@ -167,46 +273,122 @@ class BuybackRepository:
             assessment_id = self.generate_assessment_id()
 
             try:
-                # MAIN
+
+                # =========================
+                # MAIN INSERT
+                # =========================
                 cursor.execute("""
                     INSERT INTO `tabBuyback Assessment`
-                    (name, assessment_id, creation, owner,
-                     customer, customer_name, mobile_no,
-                     ch_customer_id,
-                     item, item_name, brand, imei_serial,
-                     estimated_price, status)
-                    VALUES (%s,%s,NOW(),'Administrator',
-                            %s,%s,%s,
-                            %s,
-                            %s,%s,%s,%s,%s,'Draft')
+                    (
+                        name,
+                        assessment_id,
+                        creation,
+                        owner,
+
+                        source,
+                        company,
+                        item_group,
+
+                        customer,
+                        customer_name,
+                        mobile_no,
+                        ch_customer_id,
+
+                        item,
+                        item_name,
+                        brand,
+                        imei_serial,
+
+                        estimated_price,
+                        status
+                    )
+                    VALUES
+                    (
+                        %s,
+                        %s,
+                        NOW(),
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+
+                        %s,
+                        'Draft'
+                    )
                 """, (
                     name,
                     assessment_id,
+                    payload.get("owner", "Administrator"),
+
+                    payload.get("source"),
+                    payload.get("company"),
+                    payload.get("item_group"),
+
                     payload["customer"],
                     payload["customer_name"],
                     payload["mobile_no"],
-                    payload.get("ch_customer_id"),   #  FIXED
+                    payload["ch_customer_id"],
+
                     payload["item_code"],
                     payload["item_name"],
                     payload["brand"],
                     payload["imei_serial"],
+
                     estimated_price
                 ))
 
+                # =========================
                 # RESPONSES
-                for idx, r in enumerate(payload.get("responses", []), start=1):
+                # =========================
+                for idx, r in enumerate(
+                    payload.get("responses", []),
+                    start=1
+                ):
+
                     percent = self.get_price_percent(
                         r["question_id"],
                         r["answer_value"]
                     )
 
                     cursor.execute("""
-                        INSERT INTO `tabBuyback Assessment Response`
-                        (name, creation, owner, parent, parenttype, parentfield,
-                         idx, question_code,
-                         answer_value, price_impact_percent)
-                        VALUES (%s,NOW(),'Administrator',%s,'Buyback Assessment','responses',
-                                %s,%s,%s,%s)
+                        INSERT INTO
+                        `tabBuyback Assessment Response`
+                        (
+                            name,
+                            creation,
+                            owner,
+                            parent,
+                            parenttype,
+                            parentfield,
+                            idx,
+                            question_code,
+                            answer_value,
+                            price_impact_percent
+                        )
+                        VALUES
+                        (
+                            %s,
+                            NOW(),
+                            'Administrator',
+                            %s,
+                            'Buyback Assessment',
+                            'responses',
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        )
                     """, (
                         f"RESP-{uuid.uuid4().hex[:10]}",
                         name,
@@ -216,19 +398,51 @@ class BuybackRepository:
                         percent
                     ))
 
+                # =========================
                 # DIAGNOSTICS
-                for idx, d in enumerate(payload.get("diagnostics", []), start=1):
+                # =========================
+                for idx, d in enumerate(
+                    payload.get("diagnostics", []),
+                    start=1
+                ):
+
                     percent = self.get_price_percent(
                         d["test_code"],
                         d["result"]
                     )
 
                     cursor.execute("""
-                        INSERT INTO `tabBuyback Assessment Diagnostic`
-                        (name, creation, owner, parent, parenttype, parentfield,
-                         idx, test, test_code, test_name, result, depreciation_percent)
-                        VALUES (%s, NOW(), 'Administrator', %s, 'Buyback Assessment', 'diagnostic_tests',
-                                %s, %s, %s, %s, %s, %s)
+                        INSERT INTO
+                        `tabBuyback Assessment Diagnostic`
+                        (
+                            name,
+                            creation,
+                            owner,
+                            parent,
+                            parenttype,
+                            parentfield,
+                            idx,
+                            test,
+                            test_code,
+                            test_name,
+                            result,
+                            depreciation_percent
+                        )
+                        VALUES
+                        (
+                            %s,
+                            NOW(),
+                            'Administrator',
+                            %s,
+                            'Buyback Assessment',
+                            'diagnostic_tests',
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        )
                     """, (
                         f"DIAG-{uuid.uuid4().hex[:10]}",
                         name,
@@ -241,22 +455,32 @@ class BuybackRepository:
                     ))
 
                 conn.commit()
+
                 return name
 
             except Exception as e:
+
                 conn.rollback()
+
+                print("ERROR:", repr(e))
+
                 raise e
-      # =========================
+
+    # =========================
     # GET BUYBACKS
     # =========================
     def get_buybacks_with_diagnostics(self):
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
-                SELECT 
+                SELECT
                     a.name AS assessment_name,
                     a.creation,
+                    a.source,
+                    a.company,
+                    a.item_group,
                     a.customer,
                     a.customer_name,
                     a.mobile_no,
@@ -266,37 +490,46 @@ class BuybackRepository:
                     a.imei_serial,
                     a.estimated_price,
                     a.status,
+
                     d.test_code,
                     d.test_name,
                     d.result,
                     d.depreciation_percent
+
                 FROM `tabBuyback Assessment` a
-                LEFT JOIN `tabBuyback Assessment Diagnostic` d
+
+                LEFT JOIN
+                `tabBuyback Assessment Diagnostic` d
                     ON a.name = d.parent
+
                 ORDER BY a.creation DESC
             """)
 
             return cursor.fetchall()
-    
+
     # =========================
-    # SELL NOW (FIXED)
+    # SELL NOW
     # =========================
     def mark_customer_interested_by_name(self, name):
-        name = name.strip()
 
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             try:
+
                 cursor.execute("""
-                    SELECT customer_interested 
+                    SELECT customer_interested
                     FROM `tabBuyback Assessment`
                     WHERE name = %s
                 """, (name,))
+
                 record = cursor.fetchone()
 
                 if not record:
-                    return {"success": False, "message": "Buyback not found"}
+                    return {
+                        "success": False,
+                        "message": "Buyback not found"
+                    }
 
                 if record["customer_interested"] == 1:
                     return {
@@ -307,7 +540,7 @@ class BuybackRepository:
 
                 cursor.execute("""
                     UPDATE `tabBuyback Assessment`
-                    SET 
+                    SET
                         customer_interested = 1,
                         interested_at = NOW(),
                         status = 'Interested'
@@ -323,21 +556,29 @@ class BuybackRepository:
                 }
 
             except Exception as e:
+
                 conn.rollback()
+
                 raise e
 
+    # =========================
+    # GET LATEST BUYBACK
+    # =========================
+    def get_latest_buyback_by_ch_customer(
+        self,
+        ch_customer_id
+    ):
 
-    # =========================
-    # GET LATEST BUYBACK BY CH CUSTOMER
-    # =========================
-    def get_latest_buyback_by_ch_customer(self, ch_customer_id):
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
-                SELECT 
+                SELECT
                     a.name AS assessment_name,
                     a.creation,
+                    a.source,
+                    a.company,
+                    a.item_group,
                     a.customer,
                     a.customer_name,
                     a.mobile_no,
@@ -347,13 +588,18 @@ class BuybackRepository:
                     a.imei_serial,
                     a.estimated_price,
                     a.status,
+
                     d.test_code,
                     d.test_name,
                     d.result,
                     d.depreciation_percent
+
                 FROM `tabBuyback Assessment` a
-                LEFT JOIN `tabBuyback Assessment Diagnostic` d
+
+                LEFT JOIN
+                `tabBuyback Assessment Diagnostic` d
                     ON a.name = d.parent
+
                 WHERE a.name = (
                     SELECT name
                     FROM `tabBuyback Assessment`

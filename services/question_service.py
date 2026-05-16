@@ -18,21 +18,26 @@ def get_buyback_question_list_service():
     category_order = ["General", "Physical", "Functional", "Accessories", "Warrenty"]
 
     # Functional hardcoded order ONLY
+# Functional hardcoded order ONLY
     functional_order = [
-        "front camera not working",
-        "back camera not working",
-        "volume button not working",
-        "finger touch not working",
-        "wifi not working",
-        "battery faulty",
-        "speaker faulty",
-        "power button not working",
-        "charging port not working",
-        "face sensor not working",
-        "silent button not working",
-        "audio receiver not working",
-        "camera glass broken"
-    ]
+    "front camera not working",
+    "back camera not working",
+    "volume button not working",
+    "finger touch not working",
+    "wifi not working",
+    "battery faulty",
+    "speaker faulty",
+    "power button not working",
+    "charging port not working",
+    "face sensor not working",
+    "silent button not working",
+    "audio receiver not working",
+    "camera glass broken",
+    "blutooth not working",
+    "vibrator not working",
+    "microphone not working",
+    "proximity sensor not working"
+]
 
     category_map = OrderedDict()
 

@@ -53,10 +53,6 @@ def get_sub_categories_repo(category_id=None,item_group_id=None):
 
 
 
-
-
-
-
 def get_brands_by_subcategory_repo(item_group_id=None):
     query = """
         SELECT DISTINCT
@@ -104,28 +100,33 @@ def get_models_filtered_repo(
 ):
     query = """
         SELECT
-            name,
-            model_id,
-            model_name,
-            brand_id
-        FROM `tabCH Model`
-        WHERE IFNULL(disabled,0)=0
+            m.name,
+            m.model_id,
+            m.model_name,
+            m.brand,
+            m.brand_id,
+            ig.item_group_name
+        FROM `tabCH Model` AS m
+
+        LEFT JOIN `tabItem Group` AS ig
+            ON ig.item_group_id = m.item_group_id
+
+        WHERE IFNULL(m.disabled, 0) = 0
     """
 
     params = []
 
     if item_group_id:
-        query += " AND item_group_id=%s"
+        query += " AND m.item_group_id = %s"
         params.append(item_group_id)
 
     if brand_id:
-        query += " AND brand_id=%s"
+        query += " AND m.brand_id = %s"
         params.append(brand_id)
 
-    query += " ORDER BY model_name"
+    query += " ORDER BY m.model_name"
 
     return fetch_query(query, params)
-
 
 def get_model_distinct_attributes_repo(model_id):
     return fetch_query("""
