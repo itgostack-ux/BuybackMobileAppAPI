@@ -1,5 +1,6 @@
 from collections import OrderedDict
 
+
 from repositories.question_repository import (
     get_buyback_question_list_repo,
     get_automated_test_list_repo,
@@ -224,35 +225,196 @@ def get_automated_test_list_service():
     }
 
 
+
 # =========================================================
-# GET BUYBACK QUESTIONS
+# MODEL BASED QUESTIONS SERVICE
 # =========================================================
 def get_buyback_questions_service(item_code):
 
-    data = get_buyback_questions_repo(
+    rows = get_buyback_questions_repo(
         item_code
     )
+
+    if not rows:
+        return {
+            "success": True,
+            "item_code": item_code,
+            "data": []
+        }
+
+    # =====================================================
+    # STATIC CATEGORY ORDER
+    # =====================================================
+    category_order = [
+        "General",
+        "Physical",
+        "Functional",
+        "Accessories",
+        "Warrenty"
+    ]
+
+    # =====================================================
+    # FUNCTIONAL QUESTION ORDER
+    # =====================================================
+    functional_order = [
+        "front camera not working",
+        "back camera not working",
+        "volume button not working",
+        "finger touch not working",
+        "wifi not working",
+        "battery faulty",
+        "speaker faulty",
+        "power button not working",
+        "charging port not working",
+        "face sensor not working",
+        "silent button not working",
+        "audio receiver not working",
+        "camera glass broken",
+        "blutooth not working",
+        "vibrator not working",
+        "microphone not working",
+        "proximity sensor not working"
+    ]
+
+    category_map = OrderedDict()
+
+    # =====================================================
+    # BUILD CATEGORY MAP
+    # =====================================================
+    for row in rows:
+
+        category = (
+            row.get("QuestionCategory")
+            or "Others"
+        )
+
+        qname = row["QuestionName"]
+
+        if category not in category_map:
+            category_map[category] = OrderedDict()
+
+        if qname not in category_map[category]:
+
+            category_map[category][qname] = {
+                "QuestionName": qname,
+                "QuestionCode": row.get(
+                    "QuestionCode"
+                ),
+                "QuestionText": (
+                    row.get("QuestionText") or ""
+                ).strip(),
+                "QuestionType": row.get(
+                    "QuestionType"
+                ),
+                "DisplayOrder": row.get(
+                    "DisplayOrder"
+                ),
+                "Options": []
+            }
+
+        # =================================================
+        # ADD OPTIONS
+        # =================================================
+        if row.get("OptionValue") is not None:
+
+            option_obj = {
+                "OptionLabel": row.get(
+                    "OptionLabel"
+                ),
+                "OptionValue": row.get(
+                    "OptionValue"
+                ),
+                "PriceImpactPercent": float(
+                    row.get(
+                        "PriceImpactPercent"
+                    ) or 0
+                )
+            }
+
+            if (
+                option_obj
+                not in category_map[category][qname]["Options"]
+            ):
+
+                category_map[category][qname][
+                    "Options"
+                ].append(option_obj)
+
+    final_data = []
+
+    # =====================================================
+    # PROCESS CATEGORY ORDER
+    # =====================================================
+    for category in category_order:
+
+        if category not in category_map:
+            continue
+
+        questions = list(
+            category_map[category].values()
+        )
+
+        # =================================================
+        # FUNCTIONAL HARDCODED ORDER
+        # =================================================
+        if category == "Functional":
+
+            ordered_questions = []
+
+            for order_text in functional_order:
+
+                for question in questions:
+
+                    question_text = (
+                        question["QuestionText"]
+                        .strip()
+                        .lower()
+                    )
+
+                    if question_text == order_text:
+
+                        ordered_questions.append(
+                            question
+                        )
+
+                        break
+
+            questions = ordered_questions
+
+        else:
+
+            questions = sorted(
+                questions,
+                key=lambda x: x[
+                    "DisplayOrder"
+                ] or 0
+            )
+
+        final_data.append({
+            "Category": category,
+            "Questions": questions
+        })
+
+    # =====================================================
+    # EXTRA CATEGORIES
+    # =====================================================
+    for category, questions in category_map.items():
+
+        if category not in category_order:
+
+            final_data.append({
+                "Category": category,
+                "Questions": sorted(
+                    list(questions.values()),
+                    key=lambda x: x[
+                        "DisplayOrder"
+                    ] or 0
+                )
+            })
 
     return {
         "success": True,
         "item_code": item_code,
-        "count": len(data),
-        "data": data
-    }
-
-
-# =========================================================
-# GET BUYBACK TESTS
-# =========================================================
-def get_buyback_tests_service(item_code):
-
-    data = get_buyback_tests_repo(
-        item_code
-    )
-
-    return {
-        "success": True,
-        "item_code": item_code,
-        "count": len(data),
-        "data": data
+        "count": len(final_data),
+        "data": final_data
     }

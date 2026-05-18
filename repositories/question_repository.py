@@ -58,9 +58,8 @@ def get_automated_test_list_repo():
         """)
 
         return cursor.fetchall()
-
 # =========================================================
-# GET MODEL BASED QUESTIONS
+# MODEL BASED QUESTIONS CATEGORY WISE
 # =========================================================
 def get_buyback_questions_repo(item_code):
 
@@ -73,10 +72,19 @@ def get_buyback_questions_repo(item_code):
                 p.item_code,
                 p.item_name,
 
-                q.idx AS display_order,
-                q.question,
-                q.question_text,
-                q.question_code
+                qb.name AS QuestionName,
+                qb.question_text AS QuestionText,
+                qb.question_type AS QuestionType,
+                qb.question_category AS QuestionCategory,
+
+                q.idx AS DisplayOrder,
+
+                qb.question_code AS QuestionCode,
+
+                opt.option_label AS OptionLabel,
+                opt.option_value AS OptionValue,
+                opt.price_impact_percent AS PriceImpactPercent,
+                opt.idx AS OptionOrder
 
             FROM `tabBuyback Item Question Map` p
 
@@ -84,13 +92,23 @@ def get_buyback_questions_repo(item_code):
             `tabBuyback Item Question Map Detail` q
                 ON q.parent = p.name
 
+            INNER JOIN
+            `tabBuyback Question Bank` qb
+                ON qb.name = q.question
+
+            LEFT JOIN
+            `tabBuyback Question Option` opt
+                ON opt.parent = qb.name
+
             WHERE p.item_code = %s
 
-            ORDER BY q.idx
+            ORDER BY
+                qb.question_category ASC,
+                q.idx ASC,
+                opt.idx ASC
         """, (item_code,))
 
         return cursor.fetchall()
-
 # =========================================================
 # GET MODEL BASED TESTS
 # =========================================================
