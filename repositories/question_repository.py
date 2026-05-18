@@ -120,13 +120,23 @@ def get_buyback_tests_repo(item_code):
 
         cursor.execute("""
             SELECT
-                p.item_code,
-                p.item_name,
+                p.item_code AS ItemCode,
+                p.item_name AS ItemName,
 
-                t.idx AS display_order,
-                t.test,
-                t.test_name,
-                t.test_code
+                t.idx AS DisplayOrder,
+
+                t.test AS TestID,
+                t.test_name AS TestName,
+                t.test_code AS TestCode,
+
+                qb.question_text AS TestText,
+                qb.question_type AS TestType,
+                qb.question_category AS TestCategory,
+
+                opt.option_label AS OptionLabel,
+                opt.option_value AS OptionValue,
+                opt.price_impact_percent AS PriceImpactPercent,
+                opt.idx AS OptionOrder
 
             FROM `tabBuyback Item Question Map` p
 
@@ -134,9 +144,20 @@ def get_buyback_tests_repo(item_code):
             `tabBuyback Item Test Map Detail` t
                 ON t.parent = p.name
 
-            WHERE p.item_code = %s
+            LEFT JOIN
+            `tabBuyback Question Bank` qb
+                ON qb.name = t.test
 
-            ORDER BY t.idx
+            LEFT JOIN
+            `tabBuyback Question Option` opt
+                ON opt.parent = qb.name
+
+            WHERE p.item_code = %s
+              AND qb.disabled = 0
+
+            ORDER BY
+                t.idx ASC,
+                opt.idx ASC
         """, (item_code,))
 
         return cursor.fetchall()

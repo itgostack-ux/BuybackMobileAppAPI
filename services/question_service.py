@@ -1,6 +1,5 @@
 from collections import OrderedDict
 
-
 from repositories.question_repository import (
     get_buyback_question_list_repo,
     get_automated_test_list_repo,
@@ -142,6 +141,15 @@ def get_buyback_question_list_service():
 
             questions = ordered_questions
 
+        else:
+
+            questions = sorted(
+                questions,
+                key=lambda x: x[
+                    "DisplayOrder"
+                ] or 0
+            )
+
         final_data.append({
             "Category": category,
             "Questions": questions
@@ -156,8 +164,11 @@ def get_buyback_question_list_service():
 
             final_data.append({
                 "Category": category,
-                "Questions": list(
-                    questions.values()
+                "Questions": sorted(
+                    list(questions.values()),
+                    key=lambda x: x[
+                        "DisplayOrder"
+                    ] or 0
                 )
             })
 
@@ -223,7 +234,6 @@ def get_automated_test_list_service():
         "count": len(result),
         "data": list(result.values())
     }
-
 
 
 # =========================================================
@@ -417,4 +427,90 @@ def get_buyback_questions_service(item_code):
         "item_code": item_code,
         "count": len(final_data),
         "data": final_data
+    }
+# =========================================================
+# BUYBACK TESTS SERVICE
+# =========================================================
+def get_buyback_tests_service(item_code):
+
+    rows = get_buyback_tests_repo(item_code)
+
+    if not rows:
+        return {
+            "success": True,
+            "item_code": item_code,
+            "data": []
+        }
+
+    result = OrderedDict()
+
+    # =====================================================
+    # BUILD TEST MAP
+    # =====================================================
+    for row in rows:
+
+        test_name = row.get("TestName")
+
+        if test_name not in result:
+
+            result[test_name] = {
+                "TestName": test_name,
+                "TestCode": row.get("TestCode"),
+                "TestText": row.get("TestText"),
+                "TestType": row.get("TestType"),
+                "TestCategory": row.get("TestCategory"),
+                "DisplayOrder": row.get("DisplayOrder"),
+                "Options": []
+            }
+
+        # =================================================
+        # ADD OPTIONS
+        # =================================================
+        if row.get("OptionValue") is not None:
+
+            option_obj = {
+                "OptionLabel": row.get("OptionLabel"),
+                "OptionValue": row.get("OptionValue"),
+                "PriceImpactPercent": float(
+                    row.get("PriceImpactPercent") or 0
+                ),
+                "OptionOrder": row.get("OptionOrder") or 0
+            }
+
+            if (
+                option_obj
+                not in result[test_name]["Options"]
+            ):
+
+                result[test_name]["Options"].append(
+                    option_obj
+                )
+
+    # =====================================================
+    # SORT OPTIONS
+    # =====================================================
+    for test in result.values():
+
+        test["Options"] = sorted(
+            test["Options"],
+            key=lambda x: x["OptionOrder"]
+        )
+
+        # REMOVE TEMP FIELD
+        for opt in test["Options"]:
+            opt.pop("OptionOrder", None)
+
+    # =====================================================
+    # SORT TESTS
+    # =====================================================
+    sorted_tests = sorted(
+        list(result.values()),
+        key=lambda x: x["DisplayOrder"] or 0
+    )
+
+    return {
+        "success": True,
+        "item_code": item_code,
+        "count": len(sorted_tests),
+        "data": sorted_tests
     }
