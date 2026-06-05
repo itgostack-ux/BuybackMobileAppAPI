@@ -188,3 +188,41 @@ def get_variants_by_ram_storage_service(
         "count": len(data),
         "data": data
     }
+
+def get_item_image_service(item_code):
+    data = get_item_image_repo(item_code)
+
+    if data:
+        image = data[0].get("image")
+
+        data[0]["image_url"] = (
+            f"http://155.117.46.151:8002{image}"
+            if image else None
+        )
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data
+    }
+
+def get_models_with_image_by_brand_service(brand_id):
+
+    data = get_models_with_image_by_brand_repo(
+        brand_id
+    )
+
+    for row in data:
+
+        image = row.get("image")
+
+        row["image_url"] = (
+            f"http://155.117.46.151:8002{image}"
+            if image else None
+        )
+
+    return {
+        "success": True,
+        "count": len(data),
+        "data": data
+    }

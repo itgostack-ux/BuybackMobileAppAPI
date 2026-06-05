@@ -591,3 +591,40 @@ def get_variants_by_ram_storage_repo(
         query,
         tuple(params)
     )
+
+
+def get_item_image_repo(item_code):
+    return fetch_query("""
+        SELECT
+            item_code,
+            item_name,
+            image,
+            item_group
+        FROM `tabItem`
+        WHERE item_code = %s
+        LIMIT 1
+    """, (item_code,))
+
+
+def get_models_with_image_by_brand_repo(brand_id):
+    return fetch_query("""
+        SELECT
+            m.model_id,
+            m.model_name,
+            m.brand,
+            m.brand_id,
+            MIN(i.image) AS image
+        FROM `tabCH Model` m
+        LEFT JOIN `tabItem` i
+            ON i.ch_model_id = m.model_id
+            AND IFNULL(i.image,'') <> ''
+        WHERE m.brand_id = %s
+          AND IFNULL(m.disabled,0) = 0
+        GROUP BY
+            m.model_id,
+            m.model_name,
+            m.brand,
+            m.brand_id
+        ORDER BY
+            m.model_name
+    """, (brand_id,))

@@ -120,3 +120,17 @@ def get_variants_by_ram_storage(
         ram,
         storage
     )
+
+@router.get("/GetItemImage")
+def get_item_image(
+    item_code: str = Query(...)
+):
+    return get_item_image_controller(item_code)
+
+@router.get("/GetModelsWithImageByBrand")
+def get_models_with_image_by_brand(
+    brand_id: int = Query(...)
+):
+    return get_models_with_image_by_brand_controller(
+        brand_id
+    )
