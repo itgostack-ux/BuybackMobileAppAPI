@@ -217,3 +217,46 @@ def get_latest_buyback_by_ch_customer_service(ch_customer_id: str):
         "success": True,
         "data": result
     }
+
+def get_buybacks_by_customer_service(ch_customer_id):
+
+    rows = repo.get_buybacks_by_customer(ch_customer_id)
+
+    grouped = {}
+
+    for row in rows:
+
+        assessment_name = row["assessment_name"]
+
+        if assessment_name not in grouped:
+            grouped[assessment_name] = {
+                "assessment_name": row["assessment_name"],
+                "creation": row["creation"],
+                "customer": row["customer"],
+                "customer_name": row["customer_name"],
+                "mobile_no": row["mobile_no"],
+                "ch_customer_id": row["ch_customer_id"],
+                "item": row["item"],
+                "item_name": row["item_name"],
+                "brand": row["brand"],
+                "imei_serial": row["imei_serial"],
+                "estimated_price": row["estimated_price"],
+                "status": row["status"],
+                "customer_interested": row["customer_interested"],
+                "interested_at": row["interested_at"],
+                "diagnostics": []
+            }
+
+        if row.get("test_code"):
+            grouped[assessment_name]["diagnostics"].append({
+                "test_code": row["test_code"],
+                "test_name": row["test_name"],
+                "result": row["result"],
+                "depreciation_percent": row["depreciation_percent"]
+            })
+
+    return {
+        "success": True,
+        "count": len(grouped),
+        "data": list(grouped.values())
+    }

@@ -4,14 +4,16 @@ from schemas.buyback_schema import (
     BuybackRequest,
     BuybackCreateResponse,
     FullBuybackRequest,
-    SellNowRequest
+    SellNowRequest,
+    
 )
 
 from controllers.buyback_controller import (
     create_buyback_controller,
     create_full_buyback_controller,
     get_buybacks_with_diagnostics_controller,
-    get_latest_buyback_by_ch_customer_controller
+    get_latest_buyback_by_ch_customer_controller,
+    get_buybacks_by_customer_controller
 )
 from controllers.buyback_controller import sell_now_controller
 router = APIRouter(
@@ -65,7 +67,7 @@ def create_full_buyback(payload: FullBuybackRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 @router.get(
-    "/GetbuybacksDiagnosticsByCustomerId/{customer_id}",
+    "/GetbuybacksDiagnostics/{customer_id}",
     summary="Get Buybacks with Diagnostics"
 )
 def get_buybacks_with_diagnostics(customer_id: str):
@@ -106,3 +108,11 @@ def sell_now(payload: SellNowRequest):
 @router.get("/latest-buyback/{ch_customer_id}")
 def get_latest_buyback(ch_customer_id: str):
     return get_latest_buyback_by_ch_customer_controller(ch_customer_id)
+
+
+@router.get(
+    "/buybacks/ch-customer/{ch_customer_id}",
+    summary="Get Buybacks By CH Customer ID"
+)
+def get_buybacks_by_customer(ch_customer_id: str):
+    return get_buybacks_by_customer_controller(ch_customer_id)

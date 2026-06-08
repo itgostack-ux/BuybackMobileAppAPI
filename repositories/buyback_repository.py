@@ -610,3 +610,42 @@ class BuybackRepository:
             """, (ch_customer_id,))
 
             return cursor.fetchall()
+
+    def get_buybacks_by_customer(self, ch_customer_id):
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                    SELECT
+                   a.name AS assessment_name,
+                 a.creation,
+                a.customer,
+                a.customer_name,
+                a.mobile_no,
+                a.ch_customer_id,
+                a.item,
+                a.item_name,
+                a.brand,
+                a.imei_serial,
+                a.estimated_price,
+                a.status,
+                a.customer_interested,
+                a.interested_at,
+
+                d.test_code,
+                d.test_name,
+                d.result,
+                d.depreciation_percent
+
+            FROM `tabBuyback Assessment` a
+
+            LEFT JOIN `tabBuyback Assessment Diagnostic` d
+                ON a.name = d.parent
+
+            WHERE a.ch_customer_id = %s
+
+            ORDER BY a.creation DESC
+        """, (ch_customer_id,))
+
+        return cursor.fetchall()

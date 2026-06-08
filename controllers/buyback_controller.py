@@ -2,7 +2,8 @@ from fastapi import HTTPException
 from services.buyback_service import (
     create_buyback_service,
     create_full_buyback_service,
-    get_latest_buyback_by_ch_customer_service
+    get_latest_buyback_by_ch_customer_service,
+    get_buybacks_by_customer_service
 )
 from services.buyback_service import get_buybacks_with_diagnostics_service
 from services.buyback_service import sell_now_service
@@ -244,6 +245,24 @@ def get_latest_buyback_by_ch_customer_controller(ch_customer_id: str):
         raise HTTPException(
             status_code=404,
             detail=result.get("message", "No buyback found")
+        )
+
+    return result
+def get_buybacks_by_customer_controller(ch_customer_id: str):
+
+    if not ch_customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="ch_customer_id is required"
+        )
+
+    try:
+        result = get_buybacks_by_customer_service(ch_customer_id)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
         )
 
     return result
