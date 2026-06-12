@@ -3,7 +3,7 @@ from controllers.item_controller import *
 from pydantic import BaseModel
 from pydantic import BaseModel, Field
 from typing import Dict
-router=APIRouter(prefix="/api/v1",tags=["Items"])
+router=APIRouter(prefix="/api/v2",tags=["Items"])
 
 
 @router.get("/GetDeviceItems")
