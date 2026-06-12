@@ -69,7 +69,7 @@ def get_items(payload: ItemFilterRequest):
         payload.filters
     )
 
-@router.get("/api/v1/get-colors-by-storage")
+@router.get("/api/v2/get-colors-by-storage")
 def get_colors_by_storage(
     model_id: int = Query(...),
     storage_value: str = Query(...)
