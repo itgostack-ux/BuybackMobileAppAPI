@@ -17,7 +17,7 @@ from controllers.buyback_controller import (
 )
 from controllers.buyback_controller import sell_now_controller
 router = APIRouter(
-    prefix="/api/v1",
+    prefix="/api/v2",
     tags=["Buyback"]
 )
 
