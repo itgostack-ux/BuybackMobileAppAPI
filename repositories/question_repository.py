@@ -58,6 +58,7 @@ def get_automated_test_list_repo():
         """)
 
         return cursor.fetchall()
+    
 # =========================================================
 # MODEL BASED QUESTIONS CATEGORY WISE
 # =========================================================

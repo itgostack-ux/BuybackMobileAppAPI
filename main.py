@@ -12,6 +12,9 @@ from routers.master_router import router as master_router
 from routers.item_router import router as item_router
 from routers.question_router import router as question_router
 from routers.customer_router import router as customer_router
+
+from routers.thirdparty_question_router import router as thirdparty_router
+
 # -------------------------------------------------
 # LOAD ENV
 # -------------------------------------------------
@@ -61,6 +64,8 @@ app.include_router(device_router)
 app.include_router(item_router)
 app.include_router(question_router)
 app.include_router(customer_router)
+app.include_router(thirdparty_router)
+
 # -------------------------------------------------
 # HEALTH
 # -------------------------------------------------
