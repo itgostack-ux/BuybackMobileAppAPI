@@ -46,6 +46,8 @@ def get_items(
                     'or shorthand "RAM/Storage/Colour" (e.g. "4GB/64GB/Black")'
     )
 ):
+
+    
     return get_items_controller(
         item_group_id,
         brand_id,

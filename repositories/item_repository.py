@@ -87,6 +87,8 @@ def get_items_repo(
         model_id
     ]
 
+    
+
     for attr, value in filters.items():
         conditions.append("(a.attribute=%s AND a.attribute_value=%s)")
         params.extend([attr, value])

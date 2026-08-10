@@ -74,6 +74,8 @@ def get_items_controller(
         filters
     )
 
+
+
 def get_colors_by_storage_controller(model_id: int, storage_value: str):
     return get_colors_by_storage_service(model_id, storage_value)
 
