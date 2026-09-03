@@ -1,8 +1,23 @@
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from pymysql.err import MySQLError
 from services.buyback_service import (
     create_buyback_service,
-    create_full_buyback_service
+    create_full_buyback_service,
+    submit_mobile_buyback_answers_service,
+    create_sell_now_service
 )
+
+
+def _database_error_response():
+    return JSONResponse(
+        status_code=503,
+        content={
+            "success": False,
+            "message": "Database connection failed. Please check MySQL server is running.",
+            "data": []
+        }
+    )
 
 
 # =========================================================
@@ -173,6 +188,71 @@ def create_full_buyback_controller(payload: dict):
         raise HTTPException(
             status_code=400,
             detail=result.get("message", "Failed to create full assessment")
+        )
+
+    return result
+
+
+def submit_mobile_buyback_answers_controller(payload: dict):
+    required_fields = [
+        "customer_id",
+        "item_code",
+        "imei_serial",
+        "answers"
+    ]
+
+    for field in required_fields:
+        if field not in payload or payload[field] in [None, ""]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{field} is required"
+            )
+
+    answers = payload.get("answers")
+
+    if not isinstance(answers, list) or len(answers) == 0:
+        raise HTTPException(400, "answers must be a non-empty list")
+
+    for index, answer in enumerate(answers, start=1):
+        if not isinstance(answer, dict):
+            raise HTTPException(400, f"Invalid answer format at index {index}")
+
+        if not answer.get("question_name") and not answer.get("question_code"):
+            raise HTTPException(
+                400,
+                f"question_name or question_code is required in answer {index}"
+            )
+
+        if not answer.get("answer_value"):
+            raise HTTPException(400, f"answer_value is required in answer {index}")
+
+    try:
+        result = submit_mobile_buyback_answers_service(payload)
+    except MySQLError:
+        return _database_error_response()
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Failed to submit buyback answers")
+        )
+
+    return result
+
+
+def create_sell_now_controller(payload: dict):
+    if not payload.get("assessment_name"):
+        raise HTTPException(status_code=400, detail="assessment_name is required")
+
+    try:
+        result = create_sell_now_service(payload)
+    except MySQLError:
+        return _database_error_response()
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Failed to create sell now order")
         )
 
     return result

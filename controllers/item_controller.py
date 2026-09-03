@@ -62,22 +62,27 @@ def get_attribute_values_controller(model_id):
     return get_attribute_values_service(model_id)
 
 def get_items_controller(
-    item_group_id,
-    brand_id,
     model_id,
-    filters
+    storage,
+    color,
+    ram=None
 ):
     return get_items_service(
-        item_group_id,
-        brand_id,
         model_id,
-        filters
+        storage,
+        color,
+        ram
     )
 
 
 
-def get_colors_by_storage_controller(model_id: int, storage_value: str):
-    return get_colors_by_storage_service(model_id, storage_value)
+def get_colors_by_storage_controller(
+    model_id: int,
+    ram_storage: str | None = None,
+    ram: str | None = None,
+    storage: str | None = None
+):
+    return get_colors_by_storage_service(model_id, ram_storage, ram, storage)
 
 def get_buyback_price_controller(item_code):
     return get_buyback_price_service(item_code)
