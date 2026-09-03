@@ -234,6 +234,265 @@ def save_customer_repo(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _get_customer(cursor, customer_id):
+    cursor.execute("""
+        SELECT
+            name,
+            customer_name,
+            mobile_no
+        FROM tabCustomer
+        WHERE name = %s
+        LIMIT 1
+    """, (customer_id,))
+
+    return cursor.fetchone()
+
+
+def _customer_address_exists(cursor, customer_id, address_id):
+    cursor.execute("""
+        SELECT a.name
+        FROM tabAddress a
+        JOIN `tabDynamic Link` dl
+            ON dl.parent = a.name
+        WHERE a.name = %s
+          AND dl.link_doctype = 'Customer'
+          AND dl.link_name = %s
+          AND dl.parenttype = 'Address'
+        LIMIT 1
+    """, (address_id, customer_id))
+
+    return cursor.fetchone() is not None
+
+
+def save_customer_address_repo(data):
+
+    now = datetime.utcnow()
+    customer_id = data.get("customer_id")
+    address_id = data.get("address_id")
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                customer = _get_customer(cursor, customer_id)
+                if not customer:
+                    return {
+                        "success": False,
+                        "message": "Customer not found",
+                        "data": None
+                    }
+
+                address_values = (
+                    customer["customer_name"],
+                    data.get("address_type") or "Billing",
+                    data.get("address_line1"),
+                    data.get("address_line2"),
+                    data.get("city"),
+                    data.get("county"),
+                    data.get("state"),
+                    data.get("country") or "India",
+                    data.get("pincode"),
+                    data.get("email_id"),
+                    data.get("phone") or customer.get("mobile_no"),
+                    data.get("is_primary_address") or 0,
+                    data.get("is_shipping_address") or 0,
+                    data.get("disabled") or 0,
+                    data.get("custom_ch_state"),
+                    data.get("custom_ch_city"),
+                    data.get("custom_ch_pincode"),
+                    data.get("custom_area"),
+                    now,
+                    "Administrator"
+                )
+
+                if address_id:
+                    if not _customer_address_exists(cursor, customer_id, address_id):
+                        return {
+                            "success": False,
+                            "message": "Address not found for this customer",
+                            "data": None
+                        }
+
+                    cursor.execute("""
+                        UPDATE tabAddress
+                        SET address_title = %s,
+                            address_type = %s,
+                            address_line1 = %s,
+                            address_line2 = %s,
+                            city = %s,
+                            county = %s,
+                            state = %s,
+                            country = %s,
+                            pincode = %s,
+                            email_id = %s,
+                            phone = %s,
+                            is_primary_address = %s,
+                            is_shipping_address = %s,
+                            disabled = %s,
+                            custom_ch_state = %s,
+                            custom_ch_city = %s,
+                            custom_ch_pincode = %s,
+                            custom_area = %s,
+                            modified = %s,
+                            modified_by = %s
+                        WHERE name = %s
+                    """, address_values + (address_id,))
+
+                    action = "updated"
+
+                else:
+                    address_id = (
+                        f"{customer_id}-{data.get('address_type') or 'Address'}-"
+                        f"{uuid.uuid4().hex[:8]}"
+                    )
+
+                    cursor.execute("""
+                        INSERT INTO tabAddress (
+                            name,
+                            address_title,
+                            address_type,
+                            address_line1,
+                            address_line2,
+                            city,
+                            county,
+                            state,
+                            country,
+                            pincode,
+                            email_id,
+                            phone,
+                            is_primary_address,
+                            is_shipping_address,
+                            disabled,
+                            custom_ch_state,
+                            custom_ch_city,
+                            custom_ch_pincode,
+                            custom_area,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by,
+                            docstatus
+                        )
+                        VALUES (
+                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                            %s,%s,'Administrator','Administrator',0
+                        )
+                    """, (address_id,) + address_values[:-1] + (now,))
+
+                    cursor.execute("""
+                        INSERT INTO `tabDynamic Link` (
+                            name,
+                            parent,
+                            parentfield,
+                            parenttype,
+                            idx,
+                            link_doctype,
+                            link_name,
+                            link_title,
+                            creation,
+                            modified,
+                            owner,
+                            modified_by,
+                            docstatus
+                        )
+                        VALUES (
+                            %s,%s,'links','Address',1,'Customer',%s,%s,
+                            %s,%s,'Administrator','Administrator',0
+                        )
+                    """, (
+                        uuid.uuid4().hex[:10],
+                        address_id,
+                        customer_id,
+                        customer["customer_name"],
+                        now,
+                        now
+                    ))
+
+                    action = "created"
+
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": f"Address {action} successfully",
+            "action": action,
+            "address_id": address_id
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def delete_customer_address_repo(customer_id, address_id):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                customer = _get_customer(cursor, customer_id)
+                if not customer:
+                    return {
+                        "success": False,
+                        "message": "Customer not found"
+                    }
+
+                if not _customer_address_exists(cursor, customer_id, address_id):
+                    return {
+                        "success": False,
+                        "message": "Address not found for this customer"
+                    }
+
+                cursor.execute("""
+                    DELETE FROM `tabDynamic Link`
+                    WHERE parent = %s
+                      AND parenttype = 'Address'
+                      AND link_doctype = 'Customer'
+                      AND link_name = %s
+                """, (address_id, customer_id))
+
+                cursor.execute("""
+                    DELETE FROM tabAddress
+                    WHERE name = %s
+                """, (address_id,))
+
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": "Address deleted successfully",
+            "address_id": address_id
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_customer_by_mobile_repo(mobile_no):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT
+                        name,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        disabled,
+                        creation,
+                        modified
+                    FROM tabCustomer
+                    WHERE mobile_no = %s
+                    LIMIT 1
+                """, (mobile_no,))
+
+                return cursor.fetchone()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def get_customers_repo(customer_id=None, mobile_no=None):
 
     try:
@@ -312,6 +571,203 @@ def get_customers_repo(customer_id=None, mobile_no=None):
                     customer["payment_accounts"] = cursor.fetchall()
 
         return customers
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_customer_addresses_repo(customer_id):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT
+                        name,
+                        customer_name
+                    FROM tabCustomer
+                    WHERE name = %s
+                    LIMIT 1
+                """, (customer_id,))
+
+                customer = cursor.fetchone()
+                if not customer:
+                    return []
+
+                cursor.execute("""
+                    SELECT
+                        a.name,
+                        a.name AS address_id,
+                        a.address_title,
+                        a.address_type,
+                        a.address_line1,
+                        a.address_line2,
+                        a.city,
+                        a.county,
+                        a.state,
+                        a.country,
+                        a.pincode,
+                        a.email_id,
+                        a.phone,
+                        a.is_primary_address,
+                        a.is_shipping_address,
+                        a.disabled,
+                        a.custom_ch_state,
+                        a.custom_ch_city,
+                        a.custom_ch_pincode,
+                        a.custom_area,
+                        a.creation,
+                        a.modified
+                    FROM tabAddress a
+                    JOIN `tabDynamic Link` dl
+                        ON dl.parent = a.name
+                    WHERE dl.link_doctype = 'Customer'
+                      AND dl.link_name = %s
+                      AND dl.parenttype = 'Address'
+                    ORDER BY a.is_primary_address DESC, a.modified DESC
+                """, (customer_id,))
+
+                addresses = cursor.fetchall()
+
+                if addresses:
+                    return addresses
+
+                cursor.execute("""
+                    SELECT
+                        name,
+                        name AS address_id,
+                        address_title,
+                        address_type,
+                        address_line1,
+                        address_line2,
+                        city,
+                        county,
+                        state,
+                        country,
+                        pincode,
+                        email_id,
+                        phone,
+                        is_primary_address,
+                        is_shipping_address,
+                        disabled,
+                        custom_ch_state,
+                        custom_ch_city,
+                        custom_ch_pincode,
+                        custom_area,
+                        creation,
+                        modified
+                    FROM tabAddress
+                    WHERE address_title = %s
+                    ORDER BY is_primary_address DESC, modified DESC
+                """, (customer["customer_name"],))
+
+                return cursor.fetchall()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_customer_orders_appointments_repo(customer_id):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT
+                        name
+                    FROM tabCustomer
+                    WHERE name = %s
+                    LIMIT 1
+                """, (customer_id,))
+
+                if not cursor.fetchone():
+                    return {
+                        "orders": [],
+                        "appointments": []
+                    }
+
+                cursor.execute("""
+                    SELECT
+                        name,
+                        order_id,
+                        buyback_assessment,
+                        settlement_type,
+                        customer,
+                        customer_name,
+                        mobile_no,
+                        store,
+                        company,
+                        status,
+                        workflow_state,
+                        item,
+                        item_name,
+                        brand,
+                        imei_serial,
+                        condition_grade,
+                        warranty_status,
+                        base_price,
+                        total_deductions,
+                        final_price,
+                        approved_price,
+                        payment_status,
+                        customer_payout_mode,
+                        latest_pickup_appointment,
+                        pickup_attempts_count,
+                        pickup_completed_at,
+                        creation,
+                        modified
+                    FROM `tabBuyback Order`
+                    WHERE customer = %s
+                    ORDER BY modified DESC
+                """, (customer_id,))
+
+                orders = cursor.fetchall()
+
+                cursor.execute("""
+                    SELECT
+                        name,
+                        appointment_id,
+                        status,
+                        buyback_order,
+                        customer,
+                        customer_name,
+                        appointment_date,
+                        appointment_slot,
+                        attempt_number,
+                        assigned_to,
+                        vendor_partner,
+                        vendor_reference,
+                        pickup_address,
+                        contact_phone,
+                        landmark,
+                        pincode,
+                        completed_at,
+                        failure_reason,
+                        next_action,
+                        reschedule_to,
+                        cancelled_at,
+                        remarks,
+                        customer_notes,
+                        creation,
+                        modified
+                    FROM `tabCH Buyback Pickup Appointment`
+                    WHERE customer = %s
+                       OR buyback_order IN (
+                           SELECT name
+                           FROM `tabBuyback Order`
+                           WHERE customer = %s
+                       )
+                    ORDER BY appointment_date DESC, modified DESC
+                """, (customer_id, customer_id))
+
+                appointments = cursor.fetchall()
+
+                return {
+                    "orders": orders,
+                    "appointments": appointments
+                }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

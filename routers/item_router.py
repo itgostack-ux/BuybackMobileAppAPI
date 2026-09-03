@@ -31,28 +31,23 @@ def get_attribute_values(
 @router.get("/GetColorsByStorage")
 def get_colors_by_storage(
     model_id: int = Query(...),
-    ram_storage: str = Query(..., description="Format: RAM/Storage (e.g. 4GB/64GB), or just Storage for storage-only phones (e.g. 128GB)")
+    storage: str = Query(..., description="Storage value, e.g. 128GB"),
+    ram: str | None = Query(None, description="Android only: RAM value, e.g. 6GB")
 ):
-    return get_colors_by_storage_controller(model_id, ram_storage)
+    return get_colors_by_storage_controller(model_id, None, ram, storage)
 
 @router.get("/GetItemsWithSpec")
 def get_items(
-    item_group_id: int = Query(...),
-    brand_id: int = Query(...),
     model_id: int = Query(...),
-    filters: str = Query(
-        ...,
-        description='JSON object of spec:value pairs (e.g. {"Storage":"128GB","Colour":"Black"}) '
-                    'or shorthand "RAM/Storage/Colour" (e.g. "4GB/64GB/Black")'
-    )
+    storage: str = Query(..., description="Storage value, e.g. 128GB"),
+    color: str = Query(..., description="Color value, e.g. Just Black"),
+    ram: str | None = Query(None, description="Android only: RAM value, e.g. 6GB")
 ):
-
-    
     return get_items_controller(
-        item_group_id,
-        brand_id,
         model_id,
-        filters
+        storage,
+        color,
+        ram
     )
 
 @router.get("/GetBuybackPrice")

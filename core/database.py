@@ -4,8 +4,7 @@ from contextlib import contextmanager
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
-
+load_dotenv(override=True)
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),

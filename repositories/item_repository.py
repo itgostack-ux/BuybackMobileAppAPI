@@ -75,17 +75,11 @@ def get_attribute_values_repo(model_id):
         """, (model_id,))
 
 def get_items_repo(
-    item_group_id,
-    brand_id,
     model_id,
     filters: dict
 ):
     conditions = []
-    params = [
-        item_group_id,
-        brand_id,
-        model_id
-    ]
+    params = [model_id]
 
     
 
@@ -96,17 +90,59 @@ def get_items_repo(
     query = f"""
         SELECT
             i.item_code,
-            i.item_name
+            i.item_name,
+            bpm.current_market_price,
+            bpm.vendor_price,
+            bpm.a_grade_iw_0_3,
+            bpm.b_grade_iw_0_3,
+            bpm.c_grade_iw_0_3,
+            bpm.a_grade_iw_0_6,
+            bpm.b_grade_iw_0_6,
+            bpm.c_grade_iw_0_6,
+            bpm.d_grade_iw_0_6,
+            bpm.a_grade_iw_6_11,
+            bpm.b_grade_iw_6_11,
+            bpm.c_grade_iw_6_11,
+            bpm.d_grade_iw_6_11,
+            bpm.a_grade_oow_11,
+            bpm.b_grade_oow_11,
+            bpm.c_grade_oow_11,
+            bpm.d_grade_oow_11,
+            bpm.scrap_price,
+            bpm.phone_dead_price
         FROM `tabItem` i
         JOIN `tabItem Variant Attribute` a
             ON a.parent = i.name
+        LEFT JOIN `tabBuyback Price Master` bpm
+            ON bpm.item_code = i.item_code
+            AND bpm.is_active = 1
         WHERE
             i.disabled = 0
-            AND i.ch_item_group_id = %s
-            AND i.ch_brand_id = %s
             AND i.ch_model_id = %s
             AND ({' OR '.join(conditions)})
-        GROUP BY i.name, i.item_code, i.item_name
+        GROUP BY
+            i.name,
+            i.item_code,
+            i.item_name,
+            bpm.current_market_price,
+            bpm.vendor_price,
+            bpm.a_grade_iw_0_3,
+            bpm.b_grade_iw_0_3,
+            bpm.c_grade_iw_0_3,
+            bpm.a_grade_iw_0_6,
+            bpm.b_grade_iw_0_6,
+            bpm.c_grade_iw_0_6,
+            bpm.d_grade_iw_0_6,
+            bpm.a_grade_iw_6_11,
+            bpm.b_grade_iw_6_11,
+            bpm.c_grade_iw_6_11,
+            bpm.d_grade_iw_6_11,
+            bpm.a_grade_oow_11,
+            bpm.b_grade_oow_11,
+            bpm.c_grade_oow_11,
+            bpm.d_grade_oow_11,
+            bpm.scrap_price,
+            bpm.phone_dead_price
         HAVING COUNT(DISTINCT a.attribute) = %s
     """
 
