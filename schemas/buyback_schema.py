@@ -9,6 +9,8 @@ from enum import Enum
 class TestResult(str, Enum):
     PASS = "Pass"
     FAIL = "Fail"
+    YES = "Yes"
+    NO = "No"
 
 
 # =========================================================
@@ -22,7 +24,7 @@ class ResponseItem(BaseModel):
 class DiagnosticItem(BaseModel):
     test_code: str = Field(..., example="BQB-00006")  # FIXED
     test_name: str = Field(..., example="Bluetooth")
-    result: TestResult = Field(..., example="Fail")
+    result: TestResult = Field(..., example="No")
 
 
 class BuybackRequest(BaseModel):

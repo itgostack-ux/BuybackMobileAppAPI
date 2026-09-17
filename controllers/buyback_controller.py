@@ -5,7 +5,8 @@ from services.buyback_service import (
     create_buyback_service,
     create_full_buyback_service,
     submit_mobile_buyback_answers_service,
-    create_sell_now_service
+    create_sell_now_service,
+    create_appointment_service
 )
 
 
@@ -253,6 +254,25 @@ def create_sell_now_controller(payload: dict):
         raise HTTPException(
             status_code=400,
             detail=result.get("message", "Failed to create sell now order")
+        )
+
+    return result
+
+
+def create_appointment_controller(payload: dict):
+    for field in ["assessment_name", "customer_id", "price"]:
+        if field not in payload or payload[field] in [None, ""]:
+            raise HTTPException(status_code=400, detail=f"{field} is required")
+
+    try:
+        result = create_appointment_service(payload)
+    except MySQLError:
+        return _database_error_response()
+
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("message", "Failed to create appointment")
         )
 
     return result

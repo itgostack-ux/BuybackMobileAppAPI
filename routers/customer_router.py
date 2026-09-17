@@ -18,7 +18,7 @@ from controllers.customer_controller import (
 )
 
 router = APIRouter(
-    prefix="/Customer",
+    prefix="/api/v1/Customer",
     tags=["Customers"]
 )
 

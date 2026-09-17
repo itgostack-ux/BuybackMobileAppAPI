@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Query
 from schemas.question_schema import (
     SellNowPayload,
-    SubmitBuybackQuestionAnswersPayload
+    SubmitBuybackQuestionAnswersPayload,
+    CreateAppointmentPayload
 )
 from controllers.question_controller import (
     get_buyback_question_list_controller,
@@ -11,11 +12,12 @@ from controllers.question_controller import (
 )
 from controllers.buyback_controller import (
     create_sell_now_controller,
-    submit_mobile_buyback_answers_controller
+    submit_mobile_buyback_answers_controller,
+    create_appointment_controller
 )
 
 router = APIRouter(
-    prefix="/api/v2",
+    prefix="/api/v1",
     tags=["Buyback Questions"]
 )
 
@@ -48,3 +50,8 @@ def submit_buyback_question_answers(payload: SubmitBuybackQuestionAnswersPayload
 @router.post("/SellNow")
 def create_sell_now(payload: SellNowPayload):
     return create_sell_now_controller(payload.model_dump())
+
+
+@router.post("/CreateAppointment")
+def create_appointment(payload: CreateAppointmentPayload):
+    return create_appointment_controller(payload.model_dump())

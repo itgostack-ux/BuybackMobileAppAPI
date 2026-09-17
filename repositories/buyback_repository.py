@@ -4,6 +4,21 @@ from datetime import datetime
 import uuid
 
 
+def _diagnostic_answer_values(result):
+    values = [result]
+
+    if result == "Yes":
+        values.append("Pass")
+    elif result == "No":
+        values.append("Fail")
+    elif result == "Pass":
+        values.append("Yes")
+    elif result == "Fail":
+        values.append("No")
+
+    return values
+
+
 class BuybackRepository:
     def get_table_columns(self, table_name):
         with get_db_connection() as conn:
@@ -137,6 +152,25 @@ class BuybackRepository:
 
             result = cursor.fetchone()
             return float(result["price_impact_percent"]) if result else 0
+
+    def get_price_percent_from_values(self, question_id, answer_values):
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            for answer_value in answer_values:
+                cursor.execute("""
+                    SELECT price_impact_percent
+                    FROM `tabBuyback Question Option`
+                    WHERE parent = %s
+                    AND TRIM(LOWER(option_value)) = TRIM(LOWER(%s))
+                    LIMIT 1
+                """, (question_id, answer_value))
+
+                result = cursor.fetchone()
+                if result:
+                    return float(result["price_impact_percent"])
+
+            return 0
 
     # =========================
     # GENERATE NAME
@@ -437,9 +471,9 @@ class BuybackRepository:
             # =========================
             for idx, d in enumerate(payload.get("diagnostics", []), start=1):
 
-                percent = self.get_price_percent(
+                percent = self.get_price_percent_from_values(
                     d["test_code"],
-                    d["result"]
+                    _diagnostic_answer_values(d["result"])
                 )
 
                 cursor.execute("""
@@ -515,3 +549,136 @@ class BuybackRepository:
 
             conn.commit()
             return name
+
+    # =========================
+    # PICKUP APPOINTMENT
+    # =========================
+    def get_appointment_by_order(self, order_name):
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT
+                    name,
+                    appointment_id,
+                    status,
+                    buyback_order,
+                    customer,
+                    customer_name,
+                    appointment_date,
+                    appointment_slot,
+                    pickup_address,
+                    contact_phone
+                FROM `tabCH Buyback Pickup Appointment`
+                WHERE buyback_order = %s
+                  AND IFNULL(status, '') NOT IN ('Cancelled', 'Completed', 'Failed')
+                ORDER BY creation DESC
+                LIMIT 1
+            """, (order_name,))
+
+            return cursor.fetchone()
+
+    def generate_appointment_name(self):
+        year = datetime.now().strftime("%Y")
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT name FROM `tabCH Buyback Pickup Appointment`
+                WHERE name LIKE %s
+                ORDER BY name DESC LIMIT 1
+            """, (f"BPA-{year}-%",))
+
+            result = cursor.fetchone()
+            number = int(result["name"].split("-")[-1]) + 1 if result else 1
+
+        return f"BPA-{year}-{str(number).zfill(5)}"
+
+    def generate_appointment_id(self):
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT MAX(CAST(appointment_id AS UNSIGNED)) AS max_id
+                FROM `tabCH Buyback Pickup Appointment`
+            """)
+
+            result = cursor.fetchone()
+            return (result["max_id"] or 0) + 1
+
+    def create_pickup_appointment(self, payload, assessment, order_name, price):
+        appointment_name = self.generate_appointment_name()
+        appointment_id = self.generate_appointment_id()
+        columns = self.get_table_columns("tabCH Buyback Pickup Appointment")
+
+        now_sql = object()
+
+        row = {
+            "name": appointment_name,
+            "appointment_id": appointment_id,
+            "creation": now_sql,
+            "modified": now_sql,
+            "owner": "Administrator",
+            "modified_by": "Administrator",
+            "docstatus": 0,
+            "naming_series": "BPA-.YYYY.-",
+            "status": "Scheduled",
+            "buyback_order": order_name,
+            "customer": assessment.get("customer"),
+            "customer_name": assessment.get("customer_name"),
+            "appointment_date": payload.get("appointment_date") or datetime.now().strftime("%Y-%m-%d"),
+            "appointment_slot": payload.get("appointment_slot"),
+            "attempt_number": 1,
+            "pickup_address": payload.get("pickup_address"),
+            "contact_phone": payload.get("contact_phone") or assessment.get("mobile_no"),
+            "landmark": payload.get("landmark"),
+            "pincode": payload.get("pincode"),
+            "remarks": payload.get("remarks"),
+            "customer_notes": payload.get("customer_notes")
+        }
+
+        insert_columns = [column for column in row if column in columns]
+        values = []
+        placeholders = []
+
+        for column in insert_columns:
+            if row[column] is now_sql:
+                placeholders.append("NOW()")
+            else:
+                placeholders.append("%s")
+                values.append(row[column])
+
+        column_sql = ", ".join(f"`{column}`" for column in insert_columns)
+        placeholder_sql = ", ".join(placeholders)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                INSERT INTO `tabCH Buyback Pickup Appointment`
+                ({column_sql})
+                VALUES ({placeholder_sql})
+            """, tuple(values))
+
+            cursor.execute("""
+                UPDATE `tabBuyback Order`
+                SET approved_price = %s,
+                    final_price = %s,
+                    latest_pickup_appointment = %s,
+                    modified = NOW(),
+                    modified_by = 'Administrator'
+                WHERE name = %s
+            """, (price, price, appointment_name, order_name))
+
+            cursor.execute("""
+                UPDATE `tabBuyback Assessment`
+                SET quoted_price = %s,
+                    modified = NOW(),
+                    modified_by = 'Administrator'
+                WHERE name = %s
+            """, (price, assessment["name"]))
+
+            conn.commit()
+
+        return appointment_name

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -53,3 +54,40 @@ class SellNowPayload(BaseModel):
         if not value.strip():
             raise ValueError("assessment_name cannot be empty")
         return value.strip()
+
+
+class CreateAppointmentPayload(BaseModel):
+    assessment_name: str = Field(..., example="BBA-2026-00008")
+    customer_id: str = Field(..., example="CUST-37336")
+    price: float = Field(..., gt=0, example=19000)
+    appointment_date: Optional[str] = Field(
+        None, example="2026-09-20", description="YYYY-MM-DD, defaults to today"
+    )
+    appointment_slot: Optional[str] = Field(None, example="10:00 AM - 12:00 PM")
+    pickup_address: Optional[str] = None
+    contact_phone: Optional[str] = None
+    landmark: Optional[str] = None
+    pincode: Optional[str] = None
+    settlement_type: Optional[str] = Field("Cash", example="Cash")
+    customer_payout_mode: Optional[str] = Field(None, example="UPI")
+    remarks: Optional[str] = None
+    customer_notes: Optional[str] = None
+
+    @field_validator("assessment_name", "customer_id")
+    @classmethod
+    def validate_required_text(cls, value):
+        if not value.strip():
+            raise ValueError("value cannot be empty")
+        return value.strip()
+
+    @field_validator("appointment_date")
+    @classmethod
+    def validate_appointment_date(cls, value):
+        if value is None or not value.strip():
+            return None
+        value = value.strip()
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            raise ValueError("appointment_date must be in YYYY-MM-DD format")
+        return value
