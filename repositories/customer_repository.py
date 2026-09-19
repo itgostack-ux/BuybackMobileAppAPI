@@ -1,6 +1,7 @@
 from datetime import datetime
 from fastapi import HTTPException
 from core.database import get_db_connection
+from pymysql.err import MySQLError
 import uuid
 
 
@@ -793,3 +794,51 @@ def get_all_customers_repo():
             customers = cursor.fetchall()
 
             return customers
+
+
+GOFIX_OPTIONAL_CUSTOMER_COLUMNS = ("ch_customer_id", "ch_membership_id")
+
+
+def validate_gofix_customer_repo(mobile_no):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT column_name AS column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = DATABASE()
+                      AND table_name = 'tabCustomer'
+                      AND column_name IN ('ch_customer_id', 'ch_membership_id')
+                """)
+
+                existing = {row["column_name"] for row in cursor.fetchall()}
+
+                # Only fixed, whitelisted column names are interpolated here
+                extra_sql = "".join(
+                    f",\n                        {column}"
+                    for column in GOFIX_OPTIONAL_CUSTOMER_COLUMNS
+                    if column in existing
+                )
+
+                cursor.execute(f"""
+                    SELECT
+                        name,
+                        customer_name,
+                        mobile_no,
+                        email_id,
+                        disabled{extra_sql}
+                    FROM tabCustomer
+                    WHERE mobile_no = %s
+                    ORDER BY IFNULL(disabled, 0) ASC, modified DESC
+                    LIMIT 1
+                """, (mobile_no,))
+
+                return cursor.fetchone()
+
+    except MySQLError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection failed. Please try again."
+        )

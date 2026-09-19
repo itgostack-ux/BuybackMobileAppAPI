@@ -4,6 +4,7 @@ from services.customer_service import (
     delete_customer_address_service,
     customer_sign_in_service,
     customer_verify_otp_service,
+    validate_gofix_customer_service,
     get_customers_service,
     get_all_customers_service,
     get_customer_addresses_service,
@@ -45,3 +46,7 @@ def get_customer_orders_appointments_controller(customer_id):
 
 def get_all_customers_controller():
     return get_all_customers_service()
+
+
+def validate_gofix_customer_controller(mobile_no):
+    return validate_gofix_customer_service(mobile_no)

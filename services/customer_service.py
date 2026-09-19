@@ -3,6 +3,7 @@ from repositories.customer_repository import (
     save_customer_address_repo,
     delete_customer_address_repo,
     get_customer_by_mobile_repo,
+    validate_gofix_customer_repo,
     get_customers_repo,
     get_customer_addresses_repo,
     get_customer_orders_appointments_repo
@@ -137,5 +138,57 @@ def get_all_customers_service():
     return {
         "success": True,
         "count": len(data),
+        "data": data
+    }
+
+
+def validate_gofix_customer_service(mobile_no):
+
+    mobile_no = (mobile_no or "").strip()
+
+    if not mobile_no.isdigit() or not (10 <= len(mobile_no) <= 15):
+        return {
+            "success": False,
+            "is_valid": False,
+            "message": "mobile_no must contain 10 to 15 digits",
+            "mobile_no": mobile_no,
+            "data": None
+        }
+
+    customer = validate_gofix_customer_repo(mobile_no)
+
+    if not customer:
+        return {
+            "success": True,
+            "is_valid": False,
+            "message": "Not a GoFix customer",
+            "mobile_no": mobile_no,
+            "data": None
+        }
+
+    data = {
+        "customer_id": customer.get("name"),
+        "customer_name": customer.get("customer_name"),
+        "mobile_no": customer.get("mobile_no"),
+        "email_id": customer.get("email_id"),
+        "ch_customer_id": customer.get("ch_customer_id"),
+        "membership_id": customer.get("ch_membership_id"),
+        "disabled": int(customer.get("disabled") or 0)
+    }
+
+    if data["disabled"]:
+        return {
+            "success": True,
+            "is_valid": False,
+            "message": "GoFix customer is disabled",
+            "mobile_no": mobile_no,
+            "data": data
+        }
+
+    return {
+        "success": True,
+        "is_valid": True,
+        "message": "Valid GoFix customer",
+        "mobile_no": mobile_no,
         "data": data
     }

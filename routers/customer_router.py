@@ -11,6 +11,7 @@ from controllers.customer_controller import (
     delete_customer_address_controller,
     customer_sign_in_controller,
     customer_verify_otp_controller,
+    validate_gofix_customer_controller,
     get_customers_controller,
     get_all_customers_controller,
     get_customer_addresses_controller,
@@ -84,3 +85,11 @@ def get_customer_orders_appointments_api(customer_id: str = Query(...)):
 @router.get("/AllCustomers", include_in_schema=False)
 def get_all_customers_api():
     return get_all_customers_controller()
+
+
+# ==========================================
+# VALIDATE GOFIX CUSTOMER BY MOBILE
+# ==========================================
+@router.get("/ValidateGoFixCustomer")
+def validate_gofix_customer_api(mobile_no: str = Query(...)):
+    return validate_gofix_customer_controller(mobile_no)
