@@ -1,7 +1,8 @@
 from fastapi import APIRouter
 from controllers.master_controller import (
     get_tests_controller,
-    get_appointment_types_controller
+    get_appointment_types_controller,
+    get_gofix_stores_controller
 )
 
 router = APIRouter(
@@ -20,3 +21,9 @@ def get_tests():
 def get_appointment_types():
 
     return get_appointment_types_controller()
+
+
+@router.get("/GetGoFixStores")
+def get_gofix_stores():
+
+    return get_gofix_stores_controller()
