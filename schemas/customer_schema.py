@@ -102,8 +102,12 @@ class CustomerPayload(BaseModel):
     email_id: Optional[EmailStr] = None
     disabled: Optional[int] = 0
 
-    addresses: List[AddressSchema] = Field(default_factory=list)
-    payment_accounts: List[PaymentAccountSchema] = Field(default_factory=list)
+    addresses: Optional[List[AddressSchema]] = Field(
+        None, description="Omit to keep existing addresses on update; send [] to remove them all"
+    )
+    payment_accounts: Optional[List[PaymentAccountSchema]] = Field(
+        None, description="Omit to keep existing accounts on update; send [] to remove them all"
+    )
 
     @field_validator("customer_name")
     @classmethod

@@ -12,6 +12,7 @@ from controllers.customer_controller import (
     customer_sign_in_controller,
     customer_verify_otp_controller,
     validate_gofix_customer_controller,
+    get_buyback_customers_controller,
     get_customers_controller,
     get_all_customers_controller,
     get_customer_addresses_controller,
@@ -93,3 +94,11 @@ def get_all_customers_api():
 @router.get("/ValidateGoFixCustomer")
 def validate_gofix_customer_api(mobile_no: str = Query(...)):
     return validate_gofix_customer_controller(mobile_no)
+
+
+# ==========================================
+# ALL BUYBACK CUSTOMERS (NO PARAMETERS)
+# ==========================================
+@router.get("/GetBuybackCustomers")
+def get_buyback_customers_api():
+    return get_buyback_customers_controller()
