@@ -12,6 +12,7 @@ from controllers.customer_controller import (
     customer_sign_in_controller,
     customer_verify_otp_controller,
     validate_gofix_customer_controller,
+    is_customer_exists_controller,
     get_buyback_customers_controller,
     get_customers_controller,
     get_all_customers_controller,
@@ -102,3 +103,11 @@ def validate_gofix_customer_api(mobile_no: str = Query(...)):
 @router.get("/GetBuybackCustomers")
 def get_buyback_customers_api():
     return get_buyback_customers_controller()
+
+
+# ==========================================
+# CUSTOMER EXISTS BY PHONE
+# ==========================================
+@router.get("/IsCustomerExists")
+def is_customer_exists_api(phone: str = Query(..., description="Mobile number, 10 to 15 digits")):
+    return is_customer_exists_controller(phone)

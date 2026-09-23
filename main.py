@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from pymysql.err import MySQLError, OperationalError
 import pymysql
 from pymysql.cursors import DictCursor
 from contextlib import contextmanager
@@ -18,6 +20,39 @@ from routers.customer_router import router as customer_router
 load_dotenv()
 
 app = FastAPI(title="GoStack FastAPI", version="2.0")
+
+
+# -------------------------------------------------
+# DATABASE ERRORS -> CLEAR 503 / 500 (never a bare "Internal Server Error")
+# -------------------------------------------------
+CONNECTION_ERROR_CODES = {1045, 2002, 2003, 2005, 2006, 2013}
+
+
+@app.exception_handler(MySQLError)
+async def mysql_error_handler(request: Request, exc: MySQLError):
+    code = exc.args[0] if exc.args and isinstance(exc.args[0], int) else None
+
+    if isinstance(exc, OperationalError) and code in CONNECTION_ERROR_CODES:
+        reason = "Database login rejected" if code == 1045 else "Database connection failed"
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "message": f"{reason}. Please check the MySQL server and credentials.",
+                "error_code": code,
+                "data": []
+            }
+        )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "message": "Database error while processing the request.",
+            "error_code": code,
+            "data": []
+        }
+    )
 
 # -------------------------------------------------
 # DB CONFIG FROM ENV
@@ -72,8 +107,10 @@ def health():
                 cursor.execute("SELECT 1 AS ok")
                 result = cursor.fetchone()
         return {"status": "ok", "db": result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except MySQLError:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Unexpected server error")
     
         
 
@@ -107,7 +144,9 @@ def get_appointment_types():
             "data": data
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except MySQLError:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Unexpected server error")
 
 

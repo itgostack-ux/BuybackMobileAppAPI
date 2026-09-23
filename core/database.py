@@ -12,7 +12,8 @@ DB_CONFIG = {
     "database": os.getenv("DB_NAME"),
     "port": int(os.getenv("DB_PORT", 3306)),
     "charset": "utf8mb4",
-    "cursorclass": DictCursor
+    "cursorclass": DictCursor,
+    "connect_timeout": 5
 }
 
 @contextmanager

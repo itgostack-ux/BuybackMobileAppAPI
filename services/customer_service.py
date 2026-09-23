@@ -237,3 +237,43 @@ def get_buyback_customers_service():
         "count": len(data),
         "data": data
     }
+
+
+def is_customer_exists_service(phone):
+
+    phone = (phone or "").strip()
+
+    if not phone.isdigit() or not (10 <= len(phone) <= 15):
+        return {
+            "success": False,
+            "exists": False,
+            "message": "phone must contain 10 to 15 digits",
+            "phone": phone,
+            "data": None
+        }
+
+    customer = validate_gofix_customer_repo(phone)
+
+    if not customer:
+        return {
+            "success": True,
+            "exists": False,
+            "message": "Customer does not exist",
+            "phone": phone,
+            "data": None
+        }
+
+    return {
+        "success": True,
+        "exists": True,
+        "message": "Customer exists",
+        "phone": phone,
+        "data": {
+            "customer_id": customer.get("name"),
+            "customer_name": customer.get("customer_name"),
+            "mobile_no": customer.get("mobile_no"),
+            "email_id": customer.get("email_id"),
+            "ch_customer_id": customer.get("ch_customer_id"),
+            "disabled": int(customer.get("disabled") or 0)
+        }
+    }
