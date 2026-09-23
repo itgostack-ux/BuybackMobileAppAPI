@@ -64,34 +64,6 @@ def customer_sign_in_service(payload):
     }
 
 
-def customer_verify_otp_service(payload):
-
-    data = payload.dict()
-    mobile_no = data.get("mobile_no")
-    otp = data.get("otp")
-    customer = get_customer_by_mobile_repo(mobile_no)
-
-    if not customer:
-        return {
-            "success": False,
-            "message": "No data found",
-            "data": None
-        }
-
-    if otp != "00000":
-        return {
-            "success": False,
-            "message": "Invalid OTP",
-            "data": None
-        }
-
-    return {
-        "success": True,
-        "message": "OTP verified successfully",
-        "data": customer
-    }
-
-
 def get_customers_service(customer_id=None, mobile_no=None):
 
     data = get_customers_repo(
@@ -243,11 +215,11 @@ def is_customer_exists_service(phone):
 
     phone = (phone or "").strip()
 
-    if not phone.isdigit() or not (10 <= len(phone) <= 15):
+    if not phone.isdigit() or len(phone) != 10:
         return {
             "success": False,
             "exists": False,
-            "message": "phone must contain 10 to 15 digits",
+            "message": "phone must be exactly 10 digits",
             "phone": phone,
             "data": None
         }

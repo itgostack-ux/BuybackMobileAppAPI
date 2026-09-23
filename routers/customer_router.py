@@ -3,14 +3,12 @@ from schemas.customer_schema import (
     CustomerPayload,
     CustomerAddressPayload,
     CustomerSignInPayload,
-    CustomerOtpVerifyPayload
 )
 from controllers.customer_controller import (
     save_customer,
     save_customer_address_controller,
     delete_customer_address_controller,
     customer_sign_in_controller,
-    customer_verify_otp_controller,
     validate_gofix_customer_controller,
     is_customer_exists_controller,
     get_buyback_customers_controller,
@@ -50,11 +48,6 @@ def delete_customer_address_api(
 @router.post("/SignIn")
 def customer_sign_in_api(payload: CustomerSignInPayload):
     return customer_sign_in_controller(payload)
-
-
-@router.post("/VerifyOtp")
-def customer_verify_otp_api(payload: CustomerOtpVerifyPayload):
-    return customer_verify_otp_controller(payload)
 
 
 # ==========================================
@@ -109,5 +102,5 @@ def get_buyback_customers_api():
 # CUSTOMER EXISTS BY PHONE
 # ==========================================
 @router.get("/IsCustomerExists")
-def is_customer_exists_api(phone: str = Query(..., description="Mobile number, 10 to 15 digits")):
+def is_customer_exists_api(phone: str = Query(..., min_length=10, max_length=10, pattern=r"^[0-9]{10}$", description="Mobile number, exactly 10 digits")):
     return is_customer_exists_controller(phone)

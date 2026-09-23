@@ -136,10 +136,10 @@ def save_customer_repo(
     now = datetime.utcnow()
 
     customer_id = (customer_id or "").strip() or None
-    customer_name = (customer_name or "").strip()
+    customer_name = (customer_name or "").strip() or None
     mobile_no = (mobile_no or "").strip()
     email_id = (email_id or "").strip() or None
-    disabled = _flag(disabled)
+    disabled = None if disabled is None else _flag(disabled)
 
     try:
         with get_db_connection() as conn:
@@ -147,13 +147,18 @@ def save_customer_repo(
 
                 is_update = False
 
+                existing = None
+
                 if customer_id:
                     cursor.execute("""
-                        SELECT name FROM tabCustomer
+                        SELECT name, customer_name, email_id, disabled
+                        FROM tabCustomer
                         WHERE name=%s LIMIT 1
                     """, (customer_id,))
 
-                    if not cursor.fetchone():
+                    existing = cursor.fetchone()
+
+                    if not existing:
                         # Never silently create a different customer when the
                         # caller asked to update one that does not exist.
                         raise HTTPException(
@@ -186,6 +191,11 @@ def save_customer_repo(
                     )
 
                 if is_update:
+                    # Fields left out of the request keep their current value
+                    customer_name = customer_name or existing.get("customer_name") or mobile_no
+                    email_id = email_id if email_id is not None else existing.get("email_id")
+                    disabled = disabled if disabled is not None else _flag(existing.get("disabled"))
+
                     cursor.execute("""
                         UPDATE tabCustomer
                         SET customer_name=%s,
@@ -215,6 +225,10 @@ def save_customer_repo(
                         _delete_customer_addresses(cursor, customer_id)
 
                 else:
+                    # Mobile number is the only mandatory field
+                    customer_name = customer_name or mobile_no
+                    disabled = 0 if disabled is None else disabled
+
                     cursor.execute("""
                         SELECT IFNULL(MAX(ch_customer_id),0)+1 AS next_id
                         FROM tabCustomer
@@ -597,8 +611,8 @@ def get_customer_by_mobile_repo(mobile_no):
 
                 return cursor.fetchone()
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except MySQLError:
+        raise  # handled globally in main.py as a clean 503 / 500
 
 
 def get_customers_repo(customer_id=None, mobile_no=None):

@@ -3,7 +3,6 @@ from services.customer_service import (
     save_customer_address_service,
     delete_customer_address_service,
     customer_sign_in_service,
-    customer_verify_otp_service,
     validate_gofix_customer_service,
     is_customer_exists_service,
     get_buyback_customers_service,
@@ -28,10 +27,6 @@ def delete_customer_address_controller(customer_id, address_id):
 
 def customer_sign_in_controller(payload):
     return customer_sign_in_service(payload)
-
-
-def customer_verify_otp_controller(payload):
-    return customer_verify_otp_service(payload)
 
 
 def get_customers_controller(customer_id=None, mobile_no=None):

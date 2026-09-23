@@ -64,32 +64,13 @@ class CustomerSignInPayload(BaseModel):
         return value.strip()
 
 
-class CustomerOtpVerifyPayload(CustomerSignInPayload):
-    otp: str = Field(
-        ...,
-        min_length=5,
-        max_length=5,
-        description="OTP is required"
-    )
-
-    @field_validator("otp")
-    @classmethod
-    def validate_otp(cls, value):
-        if not value.strip():
-            raise ValueError("OTP cannot be empty")
-        if not value.isdigit():
-            raise ValueError("OTP must contain digits only")
-        return value.strip()
-
-
 class CustomerPayload(BaseModel):
     customer_id: Optional[str] = None
 
-    customer_name: str = Field(
-        ...,
-        min_length=2,
+    customer_name: Optional[str] = Field(
+        None,
         max_length=100,
-        description="Customer name is required"
+        description="Optional. Defaults to the mobile number on create; unchanged on update"
     )
 
     mobile_no: str = Field(
@@ -100,7 +81,7 @@ class CustomerPayload(BaseModel):
     )
 
     email_id: Optional[EmailStr] = None
-    disabled: Optional[int] = 0
+    disabled: Optional[int] = Field(None, description="0 or 1. Omit to keep unchanged on update")
 
     addresses: Optional[List[AddressSchema]] = Field(
         None, description="Omit to keep existing addresses on update; send [] to remove them all"
@@ -112,9 +93,14 @@ class CustomerPayload(BaseModel):
     @field_validator("customer_name")
     @classmethod
     def validate_customer_name(cls, value):
-        if not value.strip():
-            raise ValueError("Customer name cannot be empty")
-        return value.strip()
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if len(value) < 2:
+            raise ValueError("Customer name must be at least 2 characters")
+        return value
 
     @field_validator("mobile_no")
     @classmethod
