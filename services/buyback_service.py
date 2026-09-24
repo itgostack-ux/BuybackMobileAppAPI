@@ -323,6 +323,8 @@ def create_appointment_service(payload: dict):
         "item_name": assessment.get("item_name"),
         "price": price,
         "status": "Scheduled",
+        "store_id": payload.get("store_id"),
+        "appointment_type": payload.get("appointment_type"),
         "appointment_date": payload.get("appointment_date"),
         "appointment_slot": payload.get("appointment_slot")
     }

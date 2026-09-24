@@ -60,6 +60,8 @@ class CreateAppointmentPayload(BaseModel):
     assessment_name: str = Field(..., example="BBA-2026-00008")
     customer_id: str = Field(..., example="CUST-37336")
     price: float = Field(..., gt=0, example=19000)
+    store_id: Optional[str] = Field(None, example="GF-ANNANAGAR", description="Store id or code from GetGoFixStores")
+    appointment_type: Optional[str] = Field(None, example="Home Pickup")
     appointment_date: Optional[str] = Field(
         None, example="2026-09-20", description="YYYY-MM-DD, defaults to today"
     )
@@ -79,6 +81,14 @@ class CreateAppointmentPayload(BaseModel):
         if not value.strip():
             raise ValueError("value cannot be empty")
         return value.strip()
+
+    @field_validator("store_id", "appointment_type", mode="before")
+    @classmethod
+    def clean_optional(cls, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
     @field_validator("appointment_date")
     @classmethod

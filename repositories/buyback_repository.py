@@ -624,6 +624,10 @@ class BuybackRepository:
             "docstatus": 0,
             "naming_series": "BPA-.YYYY.-",
             "status": "Scheduled",
+            # written only if the column exists (see insert_columns filter below)
+            "store_id": payload.get("store_id"),
+            "store": payload.get("store_id"),
+            "appointment_type": payload.get("appointment_type"),
             "buyback_order": order_name,
             "customer": assessment.get("customer"),
             "customer_name": assessment.get("customer_name"),
