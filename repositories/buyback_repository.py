@@ -553,6 +553,25 @@ class BuybackRepository:
     # =========================
     # PICKUP APPOINTMENT
     # =========================
+    def get_store_name(self, store_id):
+        if not store_id:
+            return None
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT store_name
+                FROM `tabCH Store`
+                WHERE store_code = %s
+                   OR name = %s
+                   OR (store_id = %s AND %s REGEXP '^[0-9]+$')
+                LIMIT 1
+            """, (store_id, store_id, store_id if str(store_id).isdigit() else -1, str(store_id)))
+
+            row = cursor.fetchone()
+            return row["store_name"] if row else None
+
     def get_appointment_by_order(self, order_name):
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
@@ -627,6 +646,7 @@ class BuybackRepository:
             # written only if the column exists (see insert_columns filter below)
             "store_id": payload.get("store_id"),
             "store": payload.get("store_id"),
+            "store_name": payload.get("store_name"),
             "appointment_type": payload.get("appointment_type"),
             "buyback_order": order_name,
             "customer": assessment.get("customer"),

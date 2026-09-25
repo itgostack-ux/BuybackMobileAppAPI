@@ -308,6 +308,9 @@ def create_appointment_service(payload: dict):
             "appointment_slot": existing["appointment_slot"]
         }
 
+    if payload.get("store_id") and not payload.get("store_name"):
+        payload["store_name"] = repo.get_store_name(payload["store_id"])
+
     appointment_name = repo.create_pickup_appointment(payload, assessment, order_name, price)
 
     return {
@@ -324,6 +327,7 @@ def create_appointment_service(payload: dict):
         "price": price,
         "status": "Scheduled",
         "store_id": payload.get("store_id"),
+        "store_name": payload.get("store_name"),
         "appointment_type": payload.get("appointment_type"),
         "appointment_date": payload.get("appointment_date"),
         "appointment_slot": payload.get("appointment_slot")

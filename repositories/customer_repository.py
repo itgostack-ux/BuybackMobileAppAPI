@@ -1050,3 +1050,53 @@ def get_buyback_customers_repo():
             status_code=503,
             detail="Database connection failed. Please try again."
         )
+
+
+def get_customer_buyback_summary_repo(customer_id):
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) AS assessment_count,
+                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_assessment,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_assessment_status,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(estimated_price, 0) ORDER BY creation DESC), ',', 1) AS latest_assessment_price,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(item_name, '') ORDER BY creation DESC), ',', 1) AS latest_item_name,
+                        MAX(creation) AS last_assessment_at
+                    FROM `tabBuyback Assessment`
+                    WHERE customer = %s
+                """, (customer_id,))
+                assessment = cursor.fetchone() or {}
+
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) AS order_count,
+                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_order,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_order_status,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(approved_price, 0) ORDER BY creation DESC), ',', 1) AS latest_order_price,
+                        MAX(creation) AS last_order_at
+                    FROM `tabBuyback Order`
+                    WHERE customer = %s
+                """, (customer_id,))
+                order = cursor.fetchone() or {}
+
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) AS appointment_count,
+                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_appointment,
+                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_appointment_status
+                    FROM `tabCH Buyback Pickup Appointment`
+                    WHERE customer = %s
+                """, (customer_id,))
+                appointment = cursor.fetchone() or {}
+
+                return {**assessment, **order, **appointment}
+
+    except MySQLError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection failed. Please try again."
+        )
