@@ -3,7 +3,6 @@ from services.customer_service import (
     save_customer_address_service,
     delete_customer_address_service,
     customer_sign_in_service,
-    validate_gofix_customer_service,
     is_customer_exists_service,
     get_buyback_customers_service,
     get_customers_service,
@@ -43,11 +42,6 @@ def get_customer_orders_appointments_controller(customer_id):
 
 def get_all_customers_controller():
     return get_all_customers_service()
-
-
-def validate_gofix_customer_controller(mobile_no):
-    return validate_gofix_customer_service(mobile_no)
-
 
 def get_buyback_customers_controller():
     return get_buyback_customers_service()

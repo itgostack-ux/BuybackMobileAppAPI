@@ -386,11 +386,191 @@ def _customer_address_exists(cursor, customer_id, address_id):
     return cursor.fetchone() is not None
 
 
+ADDRESS_FIELDS = (
+    "address_type", "address_line1", "address_line2", "city", "county", "state",
+    "country", "pincode", "email_id", "phone", "is_primary_address",
+    "is_shipping_address", "disabled", "custom_ch_state", "custom_ch_city",
+    "custom_ch_pincode", "custom_area"
+)
+
+
+class _AddressSaveError(Exception):
+    pass
+
+
+def _clear_other_primary(cursor, customer_id, keep_address_id, column):
+    """Only one primary / one shipping address per customer."""
+    cursor.execute(f"""
+        UPDATE tabAddress a
+        JOIN `tabDynamic Link` dl
+            ON dl.parent = a.name
+           AND dl.parenttype = 'Address'
+           AND dl.link_doctype = 'Customer'
+           AND dl.link_name = %s
+        SET a.{column} = 0
+        WHERE a.name != %s
+          AND a.{column} = 1
+    """, (customer_id, keep_address_id))
+
+
+def _save_one_address(cursor, customer, customer_id, item, now):
+    address_id = (item.get("address_id") or "").strip() or None
+
+    address_values = (
+        customer["customer_name"],
+        item.get("address_type") or "Billing",
+        item.get("address_line1"),
+        item.get("address_line2"),
+        item.get("city"),
+        item.get("county"),
+        item.get("state"),
+        item.get("country") or "India",
+        item.get("pincode"),
+        item.get("email_id"),
+        item.get("phone") or customer.get("mobile_no"),
+        _flag(item.get("is_primary_address")),
+        _flag(item.get("is_shipping_address")),
+        _flag(item.get("disabled")),
+        item.get("custom_ch_state"),
+        item.get("custom_ch_city"),
+        item.get("custom_ch_pincode"),
+        item.get("custom_area"),
+        now,
+        "Administrator"
+    )
+
+    if address_id:
+        if not _customer_address_exists(cursor, customer_id, address_id):
+            raise _AddressSaveError(f"Address {address_id} not found for this customer")
+
+        cursor.execute("""
+            UPDATE tabAddress
+            SET address_title = %s,
+                address_type = %s,
+                address_line1 = %s,
+                address_line2 = %s,
+                city = %s,
+                county = %s,
+                state = %s,
+                country = %s,
+                pincode = %s,
+                email_id = %s,
+                phone = %s,
+                is_primary_address = %s,
+                is_shipping_address = %s,
+                disabled = %s,
+                custom_ch_state = %s,
+                custom_ch_city = %s,
+                custom_ch_pincode = %s,
+                custom_area = %s,
+                modified = %s,
+                modified_by = %s
+            WHERE name = %s
+        """, address_values + (address_id,))
+
+        action = "updated"
+
+    else:
+        address_id = (
+            f"{customer_id}-{item.get('address_type') or 'Address'}-"
+            f"{uuid.uuid4().hex[:8]}"
+        )
+
+        cursor.execute("""
+            INSERT INTO tabAddress (
+                name,
+                address_title,
+                address_type,
+                address_line1,
+                address_line2,
+                city,
+                county,
+                state,
+                country,
+                pincode,
+                email_id,
+                phone,
+                is_primary_address,
+                is_shipping_address,
+                disabled,
+                custom_ch_state,
+                custom_ch_city,
+                custom_ch_pincode,
+                custom_area,
+                creation,
+                modified,
+                owner,
+                modified_by,
+                docstatus
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,'Administrator','Administrator',0
+            )
+        """, (address_id,) + address_values[:-1] + (now,))
+
+        cursor.execute("""
+            INSERT INTO `tabDynamic Link` (
+                name,
+                parent,
+                parentfield,
+                parenttype,
+                idx,
+                link_doctype,
+                link_name,
+                link_title,
+                creation,
+                modified,
+                owner,
+                modified_by,
+                docstatus
+            )
+            VALUES (
+                %s,%s,'links','Address',1,'Customer',%s,%s,
+                %s,%s,'Administrator','Administrator',0
+            )
+        """, (
+            uuid.uuid4().hex[:10],
+            address_id,
+            customer_id,
+            customer["customer_name"],
+            now,
+            now
+        ))
+
+        action = "created"
+
+    if _flag(item.get("is_primary_address")):
+        _clear_other_primary(cursor, customer_id, address_id, "is_primary_address")
+
+    if _flag(item.get("is_shipping_address")):
+        _clear_other_primary(cursor, customer_id, address_id, "is_shipping_address")
+
+    return {"action": action, "address_id": address_id}
+
+
 def save_customer_address_repo(data):
+    """
+    Saves one address (fields given directly in the body) or several
+    (data["addresses"] is a list). All addresses are saved in a single
+    transaction: if any one of them fails, none are saved.
+    """
 
     now = datetime.utcnow()
     customer_id = data.get("customer_id")
-    address_id = data.get("address_id")
+    address_list = data.get("addresses")
+    is_bulk = address_list is not None
+
+    if is_bulk:
+        items = [item for item in address_list if item]
+        if not items:
+            return {
+                "success": False,
+                "message": "addresses list is empty",
+                "data": None
+            }
+    else:
+        items = [{key: data.get(key) for key in ADDRESS_FIELDS + ("address_id",)}]
 
     try:
         with get_db_connection() as conn:
@@ -404,145 +584,46 @@ def save_customer_address_repo(data):
                         "data": None
                     }
 
-                address_values = (
-                    customer["customer_name"],
-                    data.get("address_type") or "Billing",
-                    data.get("address_line1"),
-                    data.get("address_line2"),
-                    data.get("city"),
-                    data.get("county"),
-                    data.get("state"),
-                    data.get("country") or "India",
-                    data.get("pincode"),
-                    data.get("email_id"),
-                    data.get("phone") or customer.get("mobile_no"),
-                    data.get("is_primary_address") or 0,
-                    data.get("is_shipping_address") or 0,
-                    data.get("disabled") or 0,
-                    data.get("custom_ch_state"),
-                    data.get("custom_ch_city"),
-                    data.get("custom_ch_pincode"),
-                    data.get("custom_area"),
-                    now,
-                    "Administrator"
-                )
+                results = []
 
-                if address_id:
-                    if not _customer_address_exists(cursor, customer_id, address_id):
+                for index, item in enumerate(items, start=1):
+                    try:
+                        saved = _save_one_address(cursor, customer, customer_id, item, now)
+                    except _AddressSaveError as exc:
+                        conn.rollback()
+                        prefix = f"Address {index}: " if is_bulk else ""
                         return {
                             "success": False,
-                            "message": "Address not found for this customer",
+                            "message": f"{prefix}{exc}",
                             "data": None
                         }
 
-                    cursor.execute("""
-                        UPDATE tabAddress
-                        SET address_title = %s,
-                            address_type = %s,
-                            address_line1 = %s,
-                            address_line2 = %s,
-                            city = %s,
-                            county = %s,
-                            state = %s,
-                            country = %s,
-                            pincode = %s,
-                            email_id = %s,
-                            phone = %s,
-                            is_primary_address = %s,
-                            is_shipping_address = %s,
-                            disabled = %s,
-                            custom_ch_state = %s,
-                            custom_ch_city = %s,
-                            custom_ch_pincode = %s,
-                            custom_area = %s,
-                            modified = %s,
-                            modified_by = %s
-                        WHERE name = %s
-                    """, address_values + (address_id,))
-
-                    action = "updated"
-
-                else:
-                    address_id = (
-                        f"{customer_id}-{data.get('address_type') or 'Address'}-"
-                        f"{uuid.uuid4().hex[:8]}"
-                    )
-
-                    cursor.execute("""
-                        INSERT INTO tabAddress (
-                            name,
-                            address_title,
-                            address_type,
-                            address_line1,
-                            address_line2,
-                            city,
-                            county,
-                            state,
-                            country,
-                            pincode,
-                            email_id,
-                            phone,
-                            is_primary_address,
-                            is_shipping_address,
-                            disabled,
-                            custom_ch_state,
-                            custom_ch_city,
-                            custom_ch_pincode,
-                            custom_area,
-                            creation,
-                            modified,
-                            owner,
-                            modified_by,
-                            docstatus
-                        )
-                        VALUES (
-                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            %s,%s,'Administrator','Administrator',0
-                        )
-                    """, (address_id,) + address_values[:-1] + (now,))
-
-                    cursor.execute("""
-                        INSERT INTO `tabDynamic Link` (
-                            name,
-                            parent,
-                            parentfield,
-                            parenttype,
-                            idx,
-                            link_doctype,
-                            link_name,
-                            link_title,
-                            creation,
-                            modified,
-                            owner,
-                            modified_by,
-                            docstatus
-                        )
-                        VALUES (
-                            %s,%s,'links','Address',1,'Customer',%s,%s,
-                            %s,%s,'Administrator','Administrator',0
-                        )
-                    """, (
-                        uuid.uuid4().hex[:10],
-                        address_id,
-                        customer_id,
-                        customer["customer_name"],
-                        now,
-                        now
-                    ))
-
-                    action = "created"
+                    results.append({"index": index, **saved})
 
             conn.commit()
 
+        if not is_bulk:
+            return {
+                "success": True,
+                "message": f"Address {results[0]['action']} successfully",
+                "action": results[0]["action"],
+                "address_id": results[0]["address_id"]
+            }
+
+        created = sum(1 for r in results if r["action"] == "created")
+        updated = len(results) - created
+
         return {
             "success": True,
-            "message": f"Address {action} successfully",
-            "action": action,
-            "address_id": address_id
+            "message": f"{len(results)} address{'' if len(results) == 1 else 'es'} saved successfully",
+            "count": len(results),
+            "created": created,
+            "updated": updated,
+            "data": results
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except MySQLError:
+        raise  # handled globally in main.py as a clean 503 / 500
 
 
 def delete_customer_address_repo(customer_id, address_id):
@@ -1044,56 +1125,6 @@ def get_buyback_customers_repo():
                 """)
 
                 return cursor.fetchall()
-
-    except MySQLError:
-        raise HTTPException(
-            status_code=503,
-            detail="Database connection failed. Please try again."
-        )
-
-
-def get_customer_buyback_summary_repo(customer_id):
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) AS assessment_count,
-                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_assessment,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_assessment_status,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(estimated_price, 0) ORDER BY creation DESC), ',', 1) AS latest_assessment_price,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(item_name, '') ORDER BY creation DESC), ',', 1) AS latest_item_name,
-                        MAX(creation) AS last_assessment_at
-                    FROM `tabBuyback Assessment`
-                    WHERE customer = %s
-                """, (customer_id,))
-                assessment = cursor.fetchone() or {}
-
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) AS order_count,
-                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_order,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_order_status,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(approved_price, 0) ORDER BY creation DESC), ',', 1) AS latest_order_price,
-                        MAX(creation) AS last_order_at
-                    FROM `tabBuyback Order`
-                    WHERE customer = %s
-                """, (customer_id,))
-                order = cursor.fetchone() or {}
-
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) AS appointment_count,
-                        SUBSTRING_INDEX(GROUP_CONCAT(name ORDER BY creation DESC), ',', 1) AS latest_appointment,
-                        SUBSTRING_INDEX(GROUP_CONCAT(IFNULL(status, '') ORDER BY creation DESC), ',', 1) AS latest_appointment_status
-                    FROM `tabCH Buyback Pickup Appointment`
-                    WHERE customer = %s
-                """, (customer_id,))
-                appointment = cursor.fetchone() or {}
-
-                return {**assessment, **order, **appointment}
 
     except MySQLError:
         raise HTTPException(

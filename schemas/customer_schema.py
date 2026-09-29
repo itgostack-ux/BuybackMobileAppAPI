@@ -13,9 +13,10 @@ class AddressSchema(BaseModel):
     is_primary_address: Optional[int] = 0
 
 
-class CustomerAddressPayload(AddressSchema):
-    customer_id: str = Field(..., description="Customer ID is required")
-    address_id: Optional[str] = None
+class CustomerAddressItem(AddressSchema):
+    address_id: Optional[str] = Field(
+        None, description="Leave out to add a new address. Send an existing id to update it."
+    )
     county: Optional[str] = None
     email_id: Optional[EmailStr] = None
     phone: Optional[str] = None
@@ -25,6 +26,45 @@ class CustomerAddressPayload(AddressSchema):
     custom_ch_city: Optional[str] = None
     custom_ch_pincode: Optional[str] = None
     custom_area: Optional[str] = None
+
+
+class CustomerAddressPayload(CustomerAddressItem):
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "customer_id": "CUST-37351",
+                    "addresses": [
+                        {
+                            "address_type": "Billing",
+                            "address_line1": "No 12, Anna Nagar 3rd Avenue",
+                            "city": "Chennai",
+                            "state": "Tamil Nadu",
+                            "country": "India",
+                            "pincode": "600040",
+                            "is_primary_address": 1
+                        },
+                        {
+                            "address_type": "Shipping",
+                            "address_line1": "Plot 7, Velachery Main Road",
+                            "city": "Chennai",
+                            "state": "Tamil Nadu",
+                            "country": "India",
+                            "pincode": "600042",
+                            "is_shipping_address": 1
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+
+    customer_id: str = Field(..., description="Customer ID is required")
+    addresses: Optional[List[CustomerAddressItem]] = Field(
+        None,
+        description="Send a list to save several addresses in one call. "
+                    "Leave out to save the single address given in the body."
+    )
 
     @field_validator("customer_id")
     @classmethod
