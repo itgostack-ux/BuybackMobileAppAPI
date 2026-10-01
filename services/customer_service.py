@@ -8,7 +8,8 @@ from repositories.customer_repository import (
     get_buyback_customers_repo,
     get_customers_repo,
     get_customer_addresses_repo,
-    get_customer_orders_appointments_repo
+    get_customer_orders_appointments_repo,
+    delete_customer_orders_appointments_repo
 )
 from repositories.customer_repository import get_all_customers_repo
 
@@ -210,4 +211,75 @@ def is_customer_exists_service(phone):
             "ch_customer_id": customer.get("ch_customer_id"),
             "disabled": int(customer.get("disabled") or 0)
         }
+    }
+
+
+def _plural(count, word):
+    return f"{count} {word}" if count == 1 else f"{count} {word}s"
+
+
+def delete_customer_orders_appointments_service(customer_id, dry_run=False):
+
+    customer_id = (customer_id or "").strip()
+    dry_run = bool(dry_run)
+
+    empty = {
+        "deleted_orders_count": 0,
+        "deleted_appointments_count": 0,
+        "deleted_orders": [],
+        "deleted_appointments": [],
+        "skipped_orders": [],
+        "skipped_appointments": []
+    }
+
+    if not customer_id:
+        return {
+            "success": False,
+            "customer_id": customer_id,
+            "customer_found": False,
+            "dry_run": dry_run,
+            "message": "customer_id is required",
+            **empty
+        }
+
+    data = delete_customer_orders_appointments_repo(
+        customer_id=customer_id,
+        dry_run=dry_run
+    )
+
+    if not data["customer_found"]:
+        return {
+            "success": False,
+            "customer_id": customer_id,
+            "customer_found": False,
+            "dry_run": dry_run,
+            "message": "Customer not found",
+            **empty
+        }
+
+    orders = data["orders"]
+    appointments = data["appointments"]
+    skipped = len(data["skipped_orders"]) + len(data["skipped_appointments"])
+
+    message = (
+        f"{_plural(len(orders), 'order')} and "
+        f"{_plural(len(appointments), 'appointment')} "
+        f"{'would be deleted' if dry_run else 'deleted'}"
+    )
+
+    if skipped:
+        message += f", {skipped} skipped"
+
+    return {
+        "success": True,
+        "customer_id": customer_id,
+        "customer_found": True,
+        "dry_run": dry_run,
+        "message": message,
+        "deleted_orders_count": len(orders),
+        "deleted_appointments_count": len(appointments),
+        "deleted_orders": orders,
+        "deleted_appointments": appointments,
+        "skipped_orders": data["skipped_orders"],
+        "skipped_appointments": data["skipped_appointments"]
     }

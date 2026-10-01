@@ -14,7 +14,8 @@ from controllers.customer_controller import (
     get_customers_controller,
     get_all_customers_controller,
     get_customer_addresses_controller,
-    get_customer_orders_appointments_controller
+    get_customer_orders_appointments_controller,
+    delete_customer_orders_appointments_controller
 )
 
 router = APIRouter(
@@ -71,6 +72,17 @@ def get_customer_addresses_api(customer_id: str = Query(...)):
 @router.get("/GetOrdersAndAppointmentsByCustomerId")
 def get_customer_orders_appointments_api(customer_id: str = Query(...)):
     return get_customer_orders_appointments_controller(customer_id)
+
+
+# ==========================================
+# DELETE ALL ORDERS AND APPOINTMENTS OF A CUSTOMER
+# ==========================================
+@router.delete("/DeleteOrdersAndAppointmentsByCustomerId")
+def delete_customer_orders_appointments_api(
+    customer_id: str = Query(..., description="Exact customer id, e.g. CUST-37340"),
+    dry_run: bool = Query(False, description="true = only list what would be deleted, nothing is deleted")
+):
+    return delete_customer_orders_appointments_controller(customer_id, dry_run)
 
 
 # ==========================================

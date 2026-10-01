@@ -997,6 +997,269 @@ def get_customer_orders_appointments_repo(customer_id):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==========================================
+# DELETE A CUSTOMER'S BUYBACK ORDERS AND PICKUP APPOINTMENTS
+# ==========================================
+def _table_columns(cursor, table_name):
+    cursor.execute("""
+        SELECT column_name AS col
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = %s
+    """, (table_name,))
+
+    return {row["col"] for row in cursor.fetchall()}
+
+
+def _in_clause(values):
+    return ", ".join(["%s"] * len(values))
+
+
+def _delete_child_rows(cursor, doctype, parent_names):
+    """
+    Removes the child-table rows of the given ERP documents, as the ERP
+    itself does when a document is deleted. The table names come from the
+    ERP's own field definitions and are checked against information_schema.
+    """
+    if not parent_names:
+        return
+
+    cursor.execute("""
+        SELECT options AS child
+        FROM tabDocField
+        WHERE parent = %s
+          AND fieldtype IN ('Table', 'Table MultiSelect')
+        UNION
+        SELECT options AS child
+        FROM `tabCustom Field`
+        WHERE dt = %s
+          AND fieldtype IN ('Table', 'Table MultiSelect')
+    """, (doctype, doctype))
+
+    candidates = ["tab" + row["child"] for row in cursor.fetchall() if row.get("child")]
+    if not candidates:
+        return
+
+    cursor.execute(f"""
+        SELECT table_name AS tbl
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name IN ({_in_clause(candidates)})
+    """, tuple(candidates))
+
+    for row in cursor.fetchall():
+        table = row["tbl"]
+        if "`" in table:
+            continue
+
+        cursor.execute(f"""
+            DELETE FROM `{table}`
+            WHERE parenttype = %s
+              AND parent IN ({_in_clause(parent_names)})
+        """, (doctype, *parent_names))
+
+
+def _pickup_done(appointment):
+    return (
+        (appointment.get("status") or "").strip() == "Completed"
+        or bool(appointment.get("completed_at"))
+    )
+
+
+def _order_block_reason(order, orders_with_completed_pickup):
+    """Returns why an order must NOT be deleted, or None when it is safe to delete."""
+    if int(order.get("docstatus") or 0) != 0:
+        return "order is submitted or cancelled in the ERP"
+
+    status = (order.get("status") or "Draft").strip()
+    if status != "Draft":
+        return f"order status is {status}"
+
+    workflow_state = (order.get("workflow_state") or "Draft").strip()
+    if workflow_state != "Draft":
+        return f"workflow state is {workflow_state}"
+
+    payment_status = (order.get("payment_status") or "").strip()
+    if payment_status.lower() not in ("", "pending", "unpaid"):
+        return f"payment status is {payment_status}"
+
+    try:
+        if float(order.get("total_paid") or 0) > 0:
+            return "a payment is recorded"
+    except (TypeError, ValueError):
+        pass
+
+    for column, label in (
+        ("journal_entry", "a journal entry"),
+        ("stock_entry", "a stock entry"),
+        ("sales_invoice", "a sales invoice"),
+    ):
+        if order.get(column):
+            return f"{label} is linked"
+
+    if order.get("pickup_completed_at") or order["name"] in orders_with_completed_pickup:
+        return "pickup is completed"
+
+    return None
+
+
+def delete_customer_orders_appointments_repo(customer_id, dry_run=False):
+    """
+    Deletes the Buyback Orders and Pickup Appointments of one customer.
+
+    Only records that are still open are deleted: Draft orders with no
+    payment or accounting link, and appointments whose pickup is not
+    completed. Everything else is left alone and reported as skipped.
+
+    With dry_run=True nothing is deleted; the lists show what would be.
+    All deletes run in one transaction: if any step fails, nothing is deleted.
+    """
+    order_wanted = (
+        "name", "status", "workflow_state", "docstatus", "payment_status",
+        "total_paid", "journal_entry", "stock_entry", "sales_invoice",
+        "pickup_completed_at"
+    )
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+
+            # Exact customer id only: a delete must never guess the customer.
+            cursor.execute("""
+                SELECT name
+                FROM tabCustomer
+                WHERE name = %s
+                LIMIT 1
+            """, (customer_id,))
+
+            if not cursor.fetchone():
+                return {
+                    "customer_found": False,
+                    "orders": [],
+                    "appointments": [],
+                    "skipped_orders": [],
+                    "skipped_appointments": []
+                }
+
+            order_columns = _table_columns(cursor, "tabBuyback Order")
+            appointment_columns = _table_columns(cursor, "tabCH Buyback Pickup Appointment")
+
+            order_select = ", ".join(
+                f"`{column}`" for column in order_wanted if column in order_columns
+            )
+
+            cursor.execute(f"""
+                SELECT {order_select}
+                FROM `tabBuyback Order`
+                WHERE customer = %s
+                ORDER BY creation
+            """, (customer_id,))
+
+            orders = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT
+                    name,
+                    status,
+                    buyback_order,
+                    customer,
+                    completed_at
+                FROM `tabCH Buyback Pickup Appointment`
+                WHERE customer = %s
+                   OR buyback_order IN (
+                       SELECT name
+                       FROM `tabBuyback Order`
+                       WHERE customer = %s
+                   )
+                ORDER BY creation
+            """, (customer_id, customer_id))
+
+            appointments = cursor.fetchall()
+
+            orders_with_completed_pickup = {
+                appointment["buyback_order"]
+                for appointment in appointments
+                if _pickup_done(appointment) and appointment.get("buyback_order")
+            }
+
+            delete_orders = []
+            skipped_orders = []
+
+            for order in orders:
+                reason = _order_block_reason(order, orders_with_completed_pickup)
+                if reason:
+                    skipped_orders.append({"name": order["name"], "reason": reason})
+                else:
+                    delete_orders.append(order["name"])
+
+            kept_orders = {item["name"] for item in skipped_orders}
+
+            delete_appointments = []
+            skipped_appointments = []
+
+            for appointment in appointments:
+                if _pickup_done(appointment):
+                    reason = "pickup is completed"
+                elif appointment.get("buyback_order") in kept_orders:
+                    reason = f"its order {appointment['buyback_order']} is not deleted"
+                else:
+                    reason = None
+
+                if reason:
+                    skipped_appointments.append({"name": appointment["name"], "reason": reason})
+                else:
+                    delete_appointments.append(appointment["name"])
+
+            if not dry_run:
+
+                if delete_appointments:
+                    names = tuple(delete_appointments)
+                    marks = _in_clause(names)
+
+                    # Clear links held by records that stay
+                    if "reschedule_to" in appointment_columns:
+                        cursor.execute(f"""
+                            UPDATE `tabCH Buyback Pickup Appointment`
+                            SET reschedule_to = NULL
+                            WHERE reschedule_to IN ({marks})
+                        """, names)
+
+                    if "latest_pickup_appointment" in order_columns:
+                        cursor.execute(f"""
+                            UPDATE `tabBuyback Order`
+                            SET latest_pickup_appointment = NULL
+                            WHERE latest_pickup_appointment IN ({marks})
+                        """, names)
+
+                    _delete_child_rows(cursor, "CH Buyback Pickup Appointment", delete_appointments)
+
+                    cursor.execute(f"""
+                        DELETE FROM `tabCH Buyback Pickup Appointment`
+                        WHERE name IN ({marks})
+                    """, names)
+
+                if delete_orders:
+                    names = tuple(delete_orders)
+                    marks = _in_clause(names)
+
+                    _delete_child_rows(cursor, "Buyback Order", delete_orders)
+
+                    cursor.execute(f"""
+                        DELETE FROM `tabBuyback Order`
+                        WHERE name IN ({marks})
+                    """, names)
+
+        if not dry_run:
+            conn.commit()
+
+    return {
+        "customer_found": True,
+        "orders": delete_orders,
+        "appointments": delete_appointments,
+        "skipped_orders": skipped_orders,
+        "skipped_appointments": skipped_appointments
+    }
+
+
 def get_all_customers_repo():
     with get_db_connection() as conn:
         with conn.cursor() as cursor:

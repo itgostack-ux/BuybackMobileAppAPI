@@ -8,7 +8,8 @@ from services.customer_service import (
     get_customers_service,
     get_all_customers_service,
     get_customer_addresses_service,
-    get_customer_orders_appointments_service
+    get_customer_orders_appointments_service,
+    delete_customer_orders_appointments_service
 )
 
 
@@ -49,3 +50,7 @@ def get_buyback_customers_controller():
 
 def is_customer_exists_controller(phone):
     return is_customer_exists_service(phone)
+
+
+def delete_customer_orders_appointments_controller(customer_id, dry_run=False):
+    return delete_customer_orders_appointments_service(customer_id, dry_run)
