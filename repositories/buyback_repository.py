@@ -597,6 +597,60 @@ class BuybackRepository:
 
             return cursor.fetchone()
 
+    def get_open_appointment(self, customer_id, order_name=None, assessment_name=None,
+                             appointment_date=None, appointment_slot=None):
+        """
+        Finds an appointment that is still open for the same booking:
+          - linked to the same order, or
+          - linked to the same assessment (when the table has that column), or
+          - same customer, same date and same slot.
+        """
+        columns = self.get_table_columns("tabCH Buyback Pickup Appointment")
+
+        conditions = []
+        params = []
+
+        if order_name:
+            conditions.append("buyback_order = %s")
+            params.append(order_name)
+
+        if assessment_name and "buyback_assessment" in columns:
+            conditions.append("buyback_assessment = %s")
+            params.append(assessment_name)
+
+        date_value = appointment_date or datetime.now().strftime("%Y-%m-%d")
+        if appointment_slot:
+            conditions.append("(customer = %s AND appointment_date = %s AND appointment_slot = %s)")
+            params.extend([customer_id, date_value, appointment_slot])
+        else:
+            conditions.append("(customer = %s AND appointment_date = %s AND IFNULL(appointment_slot, '') = '')")
+            params.extend([customer_id, date_value])
+
+        where_sql = " OR ".join(conditions)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                SELECT
+                    name,
+                    appointment_id,
+                    status,
+                    buyback_order,
+                    customer,
+                    customer_name,
+                    appointment_date,
+                    appointment_slot
+                FROM `tabCH Buyback Pickup Appointment`
+                WHERE ({where_sql})
+                  AND IFNULL(status, '') NOT IN
+                      ('Cancelled', 'Completed', 'Attempted (Failed)', 'Failed', 'Rescheduled')
+                ORDER BY creation DESC
+                LIMIT 1
+            """, tuple(params))
+
+            return cursor.fetchone()
+
     def generate_appointment_name(self):
         year = datetime.now().strftime("%Y")
 
@@ -649,6 +703,9 @@ class BuybackRepository:
             "store_name": payload.get("store_name"),
             "appointment_type": payload.get("appointment_type"),
             "buyback_order": order_name,
+            "buyback_assessment": assessment.get("name"),
+            "price": price,
+            "quoted_price": price,
             "customer": assessment.get("customer"),
             "customer_name": assessment.get("customer_name"),
             "appointment_date": payload.get("appointment_date") or datetime.now().strftime("%Y-%m-%d"),
@@ -685,15 +742,18 @@ class BuybackRepository:
                 VALUES ({placeholder_sql})
             """, tuple(values))
 
-            cursor.execute("""
-                UPDATE `tabBuyback Order`
-                SET approved_price = %s,
-                    final_price = %s,
-                    latest_pickup_appointment = %s,
-                    modified = NOW(),
-                    modified_by = 'Administrator'
-                WHERE name = %s
-            """, (price, price, appointment_name, order_name))
+            # Link an order only when SellNow already created one.
+            # This method never creates a Buyback Order.
+            if order_name:
+                cursor.execute("""
+                    UPDATE `tabBuyback Order`
+                    SET approved_price = %s,
+                        final_price = %s,
+                        latest_pickup_appointment = %s,
+                        modified = NOW(),
+                        modified_by = 'Administrator'
+                    WHERE name = %s
+                """, (price, price, appointment_name, order_name))
 
             cursor.execute("""
                 UPDATE `tabBuyback Assessment`

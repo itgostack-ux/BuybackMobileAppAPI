@@ -267,6 +267,13 @@ def create_sell_now_service(payload: dict):
 
 
 def create_appointment_service(payload: dict):
+    """
+    Books a pickup appointment for an assessment.
+
+    This creates ONLY the appointment. It never creates a Buyback Order.
+    If an order already exists for the assessment (made by SellNow), the
+    appointment is linked to it; otherwise buyback_order stays empty.
+    """
     assessment = repo.get_assessment_for_sell_now(payload["assessment_name"])
     if not assessment:
         return {
@@ -285,22 +292,23 @@ def create_appointment_service(payload: dict):
     price = round(float(payload["price"]), 2)
 
     order = repo.get_order_by_assessment(payload["assessment_name"])
-    order_created = False
+    order_name = order["name"] if order else None
 
-    if order:
-        order_name = order["name"]
-    else:
-        order_name = repo.create_sell_now_order(payload, assessment)
-        order_created = True
+    existing = repo.get_open_appointment(
+        customer_id=assessment["customer"],
+        order_name=order_name,
+        assessment_name=assessment["name"],
+        appointment_date=payload.get("appointment_date"),
+        appointment_slot=payload.get("appointment_slot")
+    )
 
-    existing = repo.get_appointment_by_order(order_name)
     if existing:
         return {
             "success": True,
-            "message": "Appointment already exists for this order",
+            "message": "Appointment already exists",
             "appointment_name": existing["name"],
             "appointment_id": existing["appointment_id"],
-            "order_name": order_name,
+            "order_name": existing.get("buyback_order"),
             "assessment_name": assessment["name"],
             "customer_id": assessment["customer"],
             "status": existing["status"],
@@ -318,7 +326,6 @@ def create_appointment_service(payload: dict):
         "message": "Appointment created successfully",
         "appointment_name": appointment_name,
         "order_name": order_name,
-        "order_created": order_created,
         "assessment_name": assessment["name"],
         "customer_id": assessment["customer"],
         "customer_name": assessment.get("customer_name"),
