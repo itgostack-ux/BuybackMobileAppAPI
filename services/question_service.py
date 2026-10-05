@@ -5,6 +5,10 @@ from repositories.question_repository import (
     get_buyback_price_item_repo,
     get_diagnostic_questions_by_platform_repo
 )
+from repositories.buyback_repository import BuybackRepository
+from services import grade_pricing as gp
+
+_price_repo = BuybackRepository()
 
 
 def get_buyback_question_list_service():
@@ -116,6 +120,51 @@ def _format_question_rows(rows):
     return list(questions.values())
 
 
+def _pricing_info(item_code):
+    """
+    The ERP grade price table of this phone, for grade-wise pricing.
+    Returns {} when the phone has no grade prices, so the reply stays as it was.
+    """
+    try:
+        price_row = _price_repo.get_price_row(item_code)
+    except Exception:
+        return {}
+
+    table = gp.price_table(price_row)
+
+    if not any(band[grade] for band in table.values() for grade in gp.GRADES):
+        return {}
+
+    return {"grade_prices": table}
+
+
+def _with_warranty_category(data):
+    """
+    Puts a "Warranty" category first, holding the two questions that choose
+    the ERP price band: warranty status and device age. The ERP's own Yes/No
+    warranty question is left out, so the customer is not asked twice.
+    """
+    categories = []
+
+    for category in data:
+        questions = [
+            question for question in category["Questions"]
+            if not gp.is_erp_warranty_question(
+                question.get("QuestionCode"), question.get("QuestionText")
+            )
+        ]
+
+        if questions:
+            categories.append({**category, "Questions": questions})
+
+    warranty = {
+        "QuestionCategory": gp.WARRANTY_CATEGORY,
+        "Questions": gp.pricing_questions()
+    }
+
+    return [warranty] + categories
+
+
 def get_buyback_questions_by_item_service(item_code: str):
     item_code = item_code.strip()
 
@@ -166,6 +215,11 @@ def get_buyback_questions_by_item_service(item_code: str):
         category["Questions"] = list(category["Questions"].values())
         data.append(category)
 
+    pricing = _pricing_info(item_code)
+
+    if pricing:
+        data = _with_warranty_category(data)
+
     return {
         "success": True,
         "item_code": item_code,
@@ -173,7 +227,8 @@ def get_buyback_questions_by_item_service(item_code: str):
         "brand": item.get("brand"),
         "platform": item.get("platform"),
         "count": sum(len(category["Questions"]) for category in data),
-        "data": data
+        "data": data,
+        **pricing
     }
 
 

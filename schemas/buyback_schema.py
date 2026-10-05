@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict
 from enum import Enum
 
 
@@ -41,6 +41,16 @@ class BuybackRequest(BaseModel):
     company: Optional[str] = None
     item_group: Optional[str] = None
     owner: Optional[str] = "Administrator"
+
+    # Grade-wise pricing (optional). When either of these is sent, the
+    # price is read from the ERP grade table. When both are left out,
+    # the price is calculated by percent exactly as before.
+    warranty_status: Optional[str] = Field(
+        None, example="Out of Warranty", description="In Warranty or Out of Warranty"
+    )
+    device_age_months: Optional[float] = Field(
+        None, ge=0, le=600, example=14, description="Age of the phone in months"
+    )
 
     responses: List[ResponseItem] = Field(..., min_items=1)
 
@@ -84,6 +94,15 @@ class BuybackCreateResponse(BaseModel):
     price_explanation: Optional[str] = None
     breakdown: List[PriceBreakdownItem] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+
+    # Grade-wise pricing result. Empty when the percent calculation was used.
+    pricing_mode: Optional[str] = None
+    estimated_grade: Optional[str] = None
+    price_band: Optional[str] = None
+    price_band_label: Optional[str] = None
+    warranty_status: Optional[str] = None
+    device_age_months: Optional[float] = None
+    grade_prices: Optional[Dict[str, float]] = None
 
 
 # =========================================================

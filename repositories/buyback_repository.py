@@ -175,13 +175,27 @@ class BuybackRepository:
     def get_question_options(self, question_ids):
         """
         All options of the given questions, in one query.
-        Returns {question_id: {"question_text": ..., "options": [(value, percent), ...]}}.
-        Used to explain a price; the price itself still comes from get_price_percent.
+
+        Returns {question_id: {
+            "question_text": ...,
+            "question_code": ...,
+            "options": [(value, percent), ...],
+            "forces_grade": {answer in lower case: the ERP's Forces Grade text}
+        }}
+
+        Used to explain a price and to read the ERP's "Forces Grade" marks.
+        The percent of an answer still comes from get_price_percent.
         """
         question_ids = [q for q in dict.fromkeys(question_ids) if q]
         if not question_ids:
             return {}
 
+        try:
+            has_forces_grade = "forces_grade" in self.get_table_columns("tabBuyback Question Option")
+        except Exception:
+            has_forces_grade = False
+
+        forces_sql = "opt.forces_grade" if has_forces_grade else "NULL"
         marks = ", ".join(["%s"] * len(question_ids))
 
         with get_db_connection() as conn:
@@ -191,8 +205,10 @@ class BuybackRepository:
                 SELECT
                     opt.parent AS question_id,
                     qb.question_text,
+                    qb.question_code,
                     opt.option_value,
-                    opt.price_impact_percent
+                    opt.price_impact_percent,
+                    {forces_sql} AS forces_grade
                 FROM `tabBuyback Question Option` opt
                 LEFT JOIN `tabBuyback Question Bank` qb
                     ON qb.name = opt.parent
@@ -205,13 +221,130 @@ class BuybackRepository:
             for row in cursor.fetchall():
                 entry = result.setdefault(
                     row["question_id"],
-                    {"question_text": row.get("question_text"), "options": []}
+                    {
+                        "question_text": row.get("question_text"),
+                        "question_code": row.get("question_code"),
+                        "options": [],
+                        "forces_grade": {}
+                    }
                 )
                 entry["options"].append(
                     (row["option_value"], float(row["price_impact_percent"] or 0))
                 )
 
+                if row.get("forces_grade"):
+                    key = str(row["option_value"] or "").strip().lower()
+                    entry["forces_grade"][key] = row["forces_grade"]
+
             return result
+
+    # =========================
+    # GRADE-WISE PRICING (ERP PRICE MASTER)
+    # =========================
+    def get_price_row(self, item_code):
+        """The whole active Price Master row of an item, with every grade price."""
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT *
+                FROM `tabBuyback Price Master`
+                WHERE item_code = %s AND is_active = 1
+                LIMIT 1
+            """, (item_code,))
+
+            return cursor.fetchone()
+
+    def get_item_default_warranty_months(self, item_code):
+        """Standard warranty length of the model in months, or None when the ERP has none."""
+        if "ch_default_warranty_months" not in self.get_table_columns("tabItem"):
+            return None
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT ch_default_warranty_months AS months
+                FROM tabItem
+                WHERE item_code = %s
+                LIMIT 1
+            """, (item_code,))
+
+            row = cursor.fetchone()
+
+        try:
+            months = float(row["months"]) if row and row["months"] is not None else 0
+        except (TypeError, ValueError):
+            months = 0
+
+        return months if months > 0 else None
+
+    def get_doctype_select_options(self, doctype, fieldnames):
+        """{fieldname: [option, ...]} for the dropdown (Select) fields of an ERP document type."""
+        fieldnames = list(fieldnames)
+        if not fieldnames:
+            return {}
+
+        marks = ", ".join(["%s"] * len(fieldnames))
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                SELECT fieldname, fieldtype, options
+                FROM tabDocField
+                WHERE parent = %s
+                  AND fieldname IN ({marks})
+                UNION ALL
+                SELECT fieldname, fieldtype, options
+                FROM `tabCustom Field`
+                WHERE dt = %s
+                  AND fieldname IN ({marks})
+            """, (doctype, *fieldnames, doctype, *fieldnames))
+
+            result = {}
+
+            for row in cursor.fetchall():
+                if row.get("fieldtype") == "Select":
+                    result[row["fieldname"]] = [
+                        line.strip()
+                        for line in str(row.get("options") or "").split("\n")
+                        if line.strip()
+                    ]
+
+            return result
+
+    def set_assessment_grade_info(self, assessment_name, values):
+        """
+        Writes grade / warranty / age on an assessment.
+        Only columns that exist in the table are written. Returns their names.
+        """
+        columns = self.get_table_columns("tabBuyback Assessment")
+
+        pairs = [
+            (column, value)
+            for column, value in values.items()
+            if column in columns and value is not None
+        ]
+
+        if not pairs:
+            return []
+
+        set_sql = ", ".join(f"`{column}` = %s" for column, _ in pairs)
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                UPDATE `tabBuyback Assessment`
+                SET {set_sql},
+                    modified = NOW()
+                WHERE name = %s
+            """, tuple(value for _, value in pairs) + (assessment_name,))
+
+            conn.commit()
+
+        return [column for column, _ in pairs]
 
     # =========================
     # GENERATE NAME
