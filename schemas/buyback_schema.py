@@ -52,6 +52,17 @@ class FullBuybackRequest(BuybackRequest):
 # =========================================================
 # RESPONSE MODELS
 # =========================================================
+class PriceBreakdownItem(BaseModel):
+    type: str = Field(..., description="question or diagnostic")
+    question_id: str
+    question_text: Optional[str] = None
+    answer_value: Optional[str] = None
+    price_impact_percent: float
+    matched: bool = Field(
+        ..., description="False when the answer is not one of the question's options"
+    )
+
+
 class BuybackCreateResponse(BaseModel):
     success: bool
     assessment_name: str
@@ -62,6 +73,17 @@ class BuybackCreateResponse(BaseModel):
     calculated_price: float
     floor_price: float
     estimated_price: float
+
+    # How the price was reached. Added so that a price which looks
+    # the same for different answers can be explained from the response.
+    raw_percent: Optional[float] = None
+    response_percent: Optional[float] = None
+    diagnostic_percent: Optional[float] = None
+    cap_applied: Optional[bool] = None
+    floor_applied: Optional[bool] = None
+    price_explanation: Optional[str] = None
+    breakdown: List[PriceBreakdownItem] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
 
 
 # =========================================================

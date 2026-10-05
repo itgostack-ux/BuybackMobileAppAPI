@@ -19,52 +19,197 @@ def _diagnostic_answer_values(result):
 
 
 # =========================================================
+# PRICE HELPERS (shared by API 1 and API 2)
+# =========================================================
+MAX_DEDUCTION_PERCENT = 80
+
+
+def _plain(value):
+    """TestResult.YES -> 'Yes'; any other value is returned unchanged."""
+    return getattr(value, "value", value)
+
+
+def _norm(value):
+    value = _plain(value)
+    return str(value if value is not None else "").strip().lower()
+
+
+def _num(value):
+    """10000.0 -> '10000', 166.5 -> '166.5'"""
+    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
+def _load_question_options(question_ids):
+    """
+    Options of the answered questions. They are used only to explain the
+    price. If this lookup fails the price is still calculated as before.
+    """
+    try:
+        return repo.get_question_options(question_ids)
+    except Exception:
+        return None
+
+
+def _breakdown_item(kind, question_id, tried_values, percent, options, warnings):
+    """One line of the price breakdown. Adds a warning when the answer was ignored."""
+    sent = _plain(tried_values[0]) if tried_values else None
+    info = options.get(question_id)
+
+    if percent:
+        matched = True
+    elif info is None:
+        matched = False
+        warnings.append(
+            f"{question_id}: this question was not found, so it was counted as 0%"
+        )
+    else:
+        valid = {_norm(value) for value, _ in info["options"]}
+        matched = any(_norm(value) in valid for value in tried_values)
+
+        if not matched:
+            allowed = ", ".join(str(value) for value, _ in info["options"])
+            warnings.append(
+                f"{question_id}: answer '{sent}' is not one of [{allowed}], "
+                f"so it was counted as 0%"
+            )
+
+    return {
+        "type": kind,
+        "question_id": str(question_id),
+        "question_text": info.get("question_text") if info else None,
+        "answer_value": None if sent is None else str(sent),
+        "price_impact_percent": round(float(percent or 0), 2),
+        "matched": matched
+    }
+
+
+def _duplicate_warnings(question_ids, warnings):
+    counts = {}
+
+    for question_id in question_ids:
+        counts[question_id] = counts.get(question_id, 0) + 1
+
+    for question_id, count in counts.items():
+        if count > 1:
+            warnings.append(
+                f"{question_id} was answered {count} times and every answer was counted"
+            )
+
+
+def _price_from_percent(base_price, raw_percent, floor_price):
+    """
+    base price - deduction %, with two limits:
+      - the deduction is never more than MAX_DEDUCTION_PERCENT
+      - the price is never below the floor price
+    """
+    total_percent = min(raw_percent, MAX_DEDUCTION_PERCENT)
+    calculated_price = base_price * (1 - total_percent / 100)
+    final_price = max(floor_price, calculated_price)
+
+    cap_applied = raw_percent > MAX_DEDUCTION_PERCENT
+    floor_applied = calculated_price < floor_price
+
+    explanation = f"Deductions add up to {_num(raw_percent)}%. "
+
+    if cap_applied:
+        explanation += (
+            f"The limit is {MAX_DEDUCTION_PERCENT}%, "
+            f"so {MAX_DEDUCTION_PERCENT}% was used. "
+        )
+
+    explanation += (
+        f"{_num(base_price)} minus {_num(total_percent)}% "
+        f"is {_num(calculated_price)}. "
+    )
+
+    if floor_applied:
+        explanation += (
+            f"That is below the floor price {_num(floor_price)}, "
+            f"so the estimated price is {_num(final_price)}."
+        )
+    else:
+        explanation += f"The estimated price is {_num(final_price)}."
+
+    return {
+        "total_percent": total_percent,
+        "calculated_price": calculated_price,
+        "final_price": final_price,
+        "cap_applied": cap_applied,
+        "floor_applied": floor_applied,
+        "explanation": explanation
+    }
+
+
+# =========================================================
 # API 1: CREATE BASIC ASSESSMENT (RESPONSES ONLY)
 # =========================================================
 def create_buyback_service(payload: dict):
 
     price_data = repo.get_base_price(payload["item_code"])
 
-    if not price_data:
+    if not price_data or price_data.get("current_market_price") is None:
         return {"success": False, "message": "Price not found"}
 
     base_price = float(price_data["current_market_price"])
 
+    responses = payload.get("responses", [])
+    options = _load_question_options([r.get("question_id") for r in responses])
+
+    breakdown = []
+    warnings = []
+
+    if options is None:
+        warnings.append("Answer details could not be loaded, so the breakdown is empty")
+
     # RESPONSE %
     response_percent = 0
 
-    for r in payload.get("responses", []):
+    for r in responses:
         percent = repo.get_price_percent(
             r.get("question_id"),
             r.get("answer_value")
         )
         response_percent += percent
 
-    # CAP
-    MAX_PERCENT = 80
-    total_percent = min(response_percent, MAX_PERCENT)
+        if options is not None:
+            breakdown.append(_breakdown_item(
+                "question",
+                r.get("question_id"),
+                [r.get("answer_value")],
+                percent,
+                options,
+                warnings
+            ))
 
-    # PRICE
-    calculated_price = base_price * (1 - total_percent / 100)
+    _duplicate_warnings([r.get("question_id") for r in responses], warnings)
 
     # FLOOR
     floor_price = repo.get_floor_price(payload["item_code"])
     if not floor_price or floor_price <= 0:
         floor_price = base_price * 0.1
 
-    final_price = max(floor_price, calculated_price)
+    # CAP + PRICE
+    price = _price_from_percent(base_price, response_percent, floor_price)
 
     # SAVE
-    name = repo.create_assessment(payload, final_price)
+    name = repo.create_assessment(payload, price["final_price"])
 
     return {
         "success": True,
         "assessment_name": name,
         "base_price": round(base_price, 2),
-        "total_percent": round(total_percent, 2),
-        "calculated_price": round(calculated_price, 2),
+        "total_percent": round(price["total_percent"], 2),
+        "calculated_price": round(price["calculated_price"], 2),
         "floor_price": round(floor_price, 2),
-        "estimated_price": round(final_price, 2)
+        "estimated_price": round(price["final_price"], 2),
+        "raw_percent": round(response_percent, 2),
+        "response_percent": round(response_percent, 2),
+        "cap_applied": price["cap_applied"],
+        "floor_applied": price["floor_applied"],
+        "price_explanation": price["explanation"],
+        "breakdown": breakdown,
+        "warnings": warnings
     }
 
 
@@ -75,49 +220,85 @@ def create_full_buyback_service(payload: dict):
 
     price_data = repo.get_base_price(payload["item_code"])
 
-    if not price_data:
+    if not price_data or price_data.get("current_market_price") is None:
         return {"success": False, "message": "Price not found"}
 
     base_price = float(price_data["current_market_price"])
 
+    responses = payload.get("responses", [])
+    diagnostics = payload.get("diagnostics", [])
+
+    options = _load_question_options(
+        [r.get("question_id") for r in responses]
+        + [d.get("test_code") for d in diagnostics]
+    )
+
+    breakdown = []
+    warnings = []
+
+    if options is None:
+        warnings.append("Answer details could not be loaded, so the breakdown is empty")
+
     # RESPONSE %
     response_percent = 0
 
-    for r in payload.get("responses", []):
+    for r in responses:
         percent = repo.get_price_percent(
             r.get("question_id"),
             r.get("answer_value")
         )
         response_percent += percent
 
-    # DIAGNOSTIC % (FIXED HERE)
+        if options is not None:
+            breakdown.append(_breakdown_item(
+                "question",
+                r.get("question_id"),
+                [r.get("answer_value")],
+                percent,
+                options,
+                warnings
+            ))
+
+    # DIAGNOSTIC %
     diagnostic_percent = 0
 
-    for d in payload.get("diagnostics", []):
+    for d in diagnostics:
+        tried_values = _diagnostic_answer_values(d.get("result"))
 
         percent = repo.get_price_percent_from_values(
             d.get("test_code"),
-            _diagnostic_answer_values(d.get("result"))
+            tried_values
         )
 
         diagnostic_percent += percent
 
-    # TOTAL % + CAP
-    MAX_PERCENT = 80
-    total_percent = min(response_percent + diagnostic_percent, MAX_PERCENT)
+        if options is not None:
+            breakdown.append(_breakdown_item(
+                "diagnostic",
+                d.get("test_code"),
+                tried_values,
+                percent,
+                options,
+                warnings
+            ))
 
-    # PRICE
-    calculated_price = base_price * (1 - total_percent / 100)
+    _duplicate_warnings(
+        [r.get("question_id") for r in responses]
+        + [d.get("test_code") for d in diagnostics],
+        warnings
+    )
 
     # FLOOR
     floor_price = repo.get_floor_price(payload["item_code"])
     if not floor_price or floor_price <= 0:
         floor_price = base_price * 0.1
 
-    final_price = max(floor_price, calculated_price)
+    # TOTAL % + CAP + PRICE
+    raw_percent = response_percent + diagnostic_percent
+    price = _price_from_percent(base_price, raw_percent, floor_price)
 
     # SAVE FULL
-    name = repo.create_full_assessment(payload, final_price)
+    name = repo.create_full_assessment(payload, price["final_price"])
 
     return {
         "success": True,
@@ -125,10 +306,16 @@ def create_full_buyback_service(payload: dict):
         "base_price": round(base_price, 2),
         "response_percent": round(response_percent, 2),
         "diagnostic_percent": round(diagnostic_percent, 2),
-        "total_percent": round(total_percent, 2),
-        "calculated_price": round(calculated_price, 2),
+        "total_percent": round(price["total_percent"], 2),
+        "calculated_price": round(price["calculated_price"], 2),
         "floor_price": round(floor_price, 2),
-        "estimated_price": round(final_price, 2)
+        "estimated_price": round(price["final_price"], 2),
+        "raw_percent": round(raw_percent, 2),
+        "cap_applied": price["cap_applied"],
+        "floor_applied": price["floor_applied"],
+        "price_explanation": price["explanation"],
+        "breakdown": breakdown,
+        "warnings": warnings
     }
 
 

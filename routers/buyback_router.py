@@ -36,6 +36,8 @@ def create_buyback(payload: BuybackRequest):
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
@@ -59,5 +61,7 @@ def create_full_buyback(payload: FullBuybackRequest):
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")

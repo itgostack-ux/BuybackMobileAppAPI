@@ -172,6 +172,47 @@ class BuybackRepository:
 
             return 0
 
+    def get_question_options(self, question_ids):
+        """
+        All options of the given questions, in one query.
+        Returns {question_id: {"question_text": ..., "options": [(value, percent), ...]}}.
+        Used to explain a price; the price itself still comes from get_price_percent.
+        """
+        question_ids = [q for q in dict.fromkeys(question_ids) if q]
+        if not question_ids:
+            return {}
+
+        marks = ", ".join(["%s"] * len(question_ids))
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                SELECT
+                    opt.parent AS question_id,
+                    qb.question_text,
+                    opt.option_value,
+                    opt.price_impact_percent
+                FROM `tabBuyback Question Option` opt
+                LEFT JOIN `tabBuyback Question Bank` qb
+                    ON qb.name = opt.parent
+                WHERE opt.parent IN ({marks})
+                ORDER BY opt.parent, opt.idx
+            """, tuple(question_ids))
+
+            result = {}
+
+            for row in cursor.fetchall():
+                entry = result.setdefault(
+                    row["question_id"],
+                    {"question_text": row.get("question_text"), "options": []}
+                )
+                entry["options"].append(
+                    (row["option_value"], float(row["price_impact_percent"] or 0))
+                )
+
+            return result
+
     # =========================
     # GENERATE NAME
     # =========================
