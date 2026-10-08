@@ -159,10 +159,29 @@ def _with_warranty_category(data):
 
     warranty = {
         "QuestionCategory": gp.WARRANTY_CATEGORY,
-        "Questions": gp.pricing_questions()
+        "Questions": gp.pricing_questions(**_erp_dropdowns())
     }
 
     return [warranty] + categories
+
+
+def _erp_dropdowns():
+    """
+    The ERP's own dropdown values for warranty status and device age, so
+    the app shows and sends exactly what the ERP stores. Empty when the
+    ERP fields are not dropdowns or cannot be read.
+    """
+    try:
+        selects = _price_repo.get_doctype_select_options(
+            "Buyback Assessment", ["warranty_status", "device_age_months"]
+        )
+    except Exception:
+        return {}
+
+    return {
+        "warranty_options": selects.get("warranty_status"),
+        "age_options": selects.get("device_age_months")
+    }
 
 
 def get_buyback_questions_by_item_service(item_code: str):

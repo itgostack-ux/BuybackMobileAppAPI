@@ -174,28 +174,40 @@ class BuybackRepository:
 
     def get_question_options(self, question_ids):
         """
-        All options of the given questions, in one query.
+        Everything the price needs about the answered questions, in one query.
 
         Returns {question_id: {
             "question_text": ...,
             "question_code": ...,
-            "options": [(value, percent), ...],
-            "forces_grade": {answer in lower case: the ERP's Forces Grade text}
+            "grading": True when the ERP lets this question force a grade
+                       (question_purpose = "Grading"; always True when the
+                       ERP has no question_purpose column),
+            "forces_grade": {answer in lower case: the ERP's Forces Grade text},
+            "options": [{"value", "label", "percent", "apple_percent",
+                         "fault_code", "forces_grade"}, ...]
         }}
 
-        Used to explain a price and to read the ERP's "Forces Grade" marks.
-        The percent of an answer still comes from get_price_percent.
+        Columns the ERP does not have (forces_grade, fault_code, the Apple
+        percent, question_purpose) are read as NULL.
         """
         question_ids = [q for q in dict.fromkeys(question_ids) if q]
         if not question_ids:
             return {}
 
         try:
-            has_forces_grade = "forces_grade" in self.get_table_columns("tabBuyback Question Option")
+            option_columns = self.get_table_columns("tabBuyback Question Option")
+            bank_columns = self.get_table_columns("tabBuyback Question Bank")
         except Exception:
-            has_forces_grade = False
+            option_columns, bank_columns = set(), set()
 
-        forces_sql = "opt.forces_grade" if has_forces_grade else "NULL"
+        def pick(alias, *candidates):
+            """The first of the candidate columns that exists, else NULL."""
+            for table, column in candidates:
+                if column in (option_columns if table == "opt" else bank_columns):
+                    return f"{table}.{column} AS {alias}"
+            return f"NULL AS {alias}"
+
+        has_purpose = "question_purpose" in bank_columns
         marks = ", ".join(["%s"] * len(question_ids))
 
         with get_db_connection() as conn:
@@ -207,8 +219,12 @@ class BuybackRepository:
                     qb.question_text,
                     qb.question_code,
                     opt.option_value,
+                    opt.option_label,
                     opt.price_impact_percent,
-                    {forces_sql} AS forces_grade
+                    {pick("apple_percent", ("opt", "price_impact_percent_apple"))},
+                    {pick("forces_grade", ("opt", "forces_grade"))},
+                    {pick("fault_code", ("opt", "fault_code"), ("qb", "fault_code"))},
+                    {pick("question_purpose", ("qb", "question_purpose"))}
                 FROM `tabBuyback Question Option` opt
                 LEFT JOIN `tabBuyback Question Bank` qb
                     ON qb.name = opt.parent
@@ -219,21 +235,33 @@ class BuybackRepository:
             result = {}
 
             for row in cursor.fetchall():
+                purpose = str(row.get("question_purpose") or "").strip().lower()
+
                 entry = result.setdefault(
                     row["question_id"],
                     {
                         "question_text": row.get("question_text"),
                         "question_code": row.get("question_code"),
-                        "options": [],
-                        "forces_grade": {}
+                        "grading": (not has_purpose) or purpose == "grading",
+                        "forces_grade": {},
+                        "options": []
                     }
                 )
-                entry["options"].append(
-                    (row["option_value"], float(row["price_impact_percent"] or 0))
-                )
+
+                value = row["option_value"]
+                fault_code = str(row.get("fault_code") or "").strip() or None
+
+                entry["options"].append({
+                    "value": value,
+                    "label": row.get("option_label") or value,
+                    "percent": float(row["price_impact_percent"] or 0),
+                    "apple_percent": float(row.get("apple_percent") or 0),
+                    "fault_code": fault_code,
+                    "forces_grade": row.get("forces_grade")
+                })
 
                 if row.get("forces_grade"):
-                    key = str(row["option_value"] or "").strip().lower()
+                    key = str(value or "").strip().lower()
                     entry["forces_grade"][key] = row["forces_grade"]
 
             return result
@@ -255,29 +283,43 @@ class BuybackRepository:
 
             return cursor.fetchone()
 
-    def get_item_default_warranty_months(self, item_code):
-        """Standard warranty length of the model in months, or None when the ERP has none."""
-        if "ch_default_warranty_months" not in self.get_table_columns("tabItem"):
-            return None
-
+    def get_buyback_setting(self, fieldname):
+        """One value of the ERP's Buyback Settings (a single document), or None."""
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
             cursor.execute("""
-                SELECT ch_default_warranty_months AS months
-                FROM tabItem
-                WHERE item_code = %s
+                SELECT value
+                FROM tabSingles
+                WHERE doctype = 'Buyback Settings'
+                  AND field = %s
+                LIMIT 1
+            """, (fieldname,))
+
+            row = cursor.fetchone()
+
+        return row["value"] if row else None
+
+    def get_item_brand_family(self, item_code):
+        """'Apple' or 'Android' from the model's brand, or None when the item is unknown."""
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute("""
+                SELECT m.brand
+                FROM tabItem i
+                LEFT JOIN `tabCH Model` m
+                    ON m.model_id = i.ch_model_id
+                WHERE i.item_code = %s
                 LIMIT 1
             """, (item_code,))
 
             row = cursor.fetchone()
 
-        try:
-            months = float(row["months"]) if row and row["months"] is not None else 0
-        except (TypeError, ValueError):
-            months = 0
+        if not row:
+            return None
 
-        return months if months > 0 else None
+        return "Apple" if "apple" in str(row.get("brand") or "").lower() else "Android"
 
     def get_doctype_select_options(self, doctype, fieldnames):
         """{fieldname: [option, ...]} for the dropdown (Select) fields of an ERP document type."""

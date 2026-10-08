@@ -30,6 +30,9 @@ class SubmitBuybackQuestionAnswersPayload(BaseModel):
     item_code: str = Field(..., example="I08901")
     imei_serial: str = Field(..., example="123456789012345")
     source: Optional[str] = Field("Mobile App", example="Android")
+    is_phone_dead: Optional[bool] = Field(
+        False, description="True when the phone does not switch on: the Phone Dead price is used, grade F"
+    )
     answers: List[BuybackSelectedAnswer] = Field(..., min_length=1)
 
     @field_validator("customer_id", "item_code", "imei_serial")

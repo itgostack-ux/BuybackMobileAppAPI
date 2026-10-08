@@ -42,14 +42,17 @@ class BuybackRequest(BaseModel):
     item_group: Optional[str] = None
     owner: Optional[str] = "Administrator"
 
-    # Grade-wise pricing (optional). When either of these is sent, the
-    # price is read from the ERP grade table. When both are left out,
-    # the price is calculated by percent exactly as before.
+    # The price band of the ERP Price Master. Both are required, unless
+    # they are sent as answers of the "Warranty" category
+    # (WARRANTY_STATUS and DEVICE_AGE) or the phone is dead.
     warranty_status: Optional[str] = Field(
         None, example="Out of Warranty", description="In Warranty or Out of Warranty"
     )
     device_age_months: Optional[float] = Field(
         None, ge=0, le=600, example=14, description="Age of the phone in months"
+    )
+    is_phone_dead: Optional[bool] = Field(
+        False, description="True when the phone does not switch on: the Phone Dead price is used, grade F"
     )
 
     responses: List[ResponseItem] = Field(..., min_items=1)
@@ -68,9 +71,14 @@ class PriceBreakdownItem(BaseModel):
     question_text: Optional[str] = None
     answer_value: Optional[str] = None
     price_impact_percent: float
+    amount: Optional[float] = Field(None, description="The deduction in money: percent of the base price")
     matched: bool = Field(
         ..., description="False when the answer is not one of the question's options"
     )
+    counted: Optional[bool] = Field(
+        None, description="False when a larger deduction for the same fault was counted instead"
+    )
+    fault_code: Optional[str] = None
 
 
 class BuybackCreateResponse(BaseModel):
@@ -95,14 +103,18 @@ class BuybackCreateResponse(BaseModel):
     breakdown: List[PriceBreakdownItem] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
 
-    # Grade-wise pricing result. Empty when the percent calculation was used.
-    pricing_mode: Optional[str] = None
-    estimated_grade: Optional[str] = None
+    # The ERP grade pricing: band, grade and the band's grade prices.
+    pricing_mode: Optional[str] = Field(None, description="grade, scrap or dead")
+    estimated_grade: Optional[str] = Field(None, description="A to D, E for scrap, F for a dead phone")
     price_band: Optional[str] = None
     price_band_label: Optional[str] = None
     warranty_status: Optional[str] = None
     device_age_months: Optional[float] = None
-    grade_prices: Optional[Dict[str, float]] = None
+    grade_prices: Optional[Dict[str, Optional[float]]] = None
+    total_deductions: Optional[float] = None
+    max_deduction_percent: Optional[float] = None
+    is_scrap: Optional[bool] = None
+    is_phone_dead: Optional[bool] = None
 
 
 # =========================================================

@@ -4,6 +4,10 @@ from services import grade_pricing as gp
 repo = BuybackRepository()
 
 
+class PriceError(Exception):
+    """The ERP would stop with an error here. The API answers 400 with the text."""
+
+
 def _diagnostic_answer_values(result):
     values = [result]
 
@@ -19,137 +23,19 @@ def _diagnostic_answer_values(result):
     return values
 
 
-# =========================================================
-# PRICE HELPERS (shared by API 1 and API 2)
-# =========================================================
-MAX_DEDUCTION_PERCENT = 80
-
-
 def _plain(value):
     """TestResult.YES -> 'Yes'; any other value is returned unchanged."""
     return getattr(value, "value", value)
 
 
-def _norm(value):
-    value = _plain(value)
-    return str(value if value is not None else "").strip().lower()
-
-
-def _num(value):
-    """10000.0 -> '10000', 166.5 -> '166.5'"""
-    text = f"{float(value):.2f}".rstrip("0").rstrip(".")
-    return text or "0"
-
-
-def _load_question_options(question_ids):
-    """
-    Options of the answered questions. They are used only to explain the
-    price. If this lookup fails the price is still calculated as before.
-    """
-    try:
-        return repo.get_question_options(question_ids)
-    except Exception:
-        return None
-
-
-def _breakdown_item(kind, question_id, tried_values, percent, options, warnings):
-    """One line of the price breakdown. Adds a warning when the answer was ignored."""
-    sent = _plain(tried_values[0]) if tried_values else None
-    info = options.get(question_id)
-
-    if percent:
-        matched = True
-    elif info is None:
-        matched = False
-        warnings.append(
-            f"{question_id}: this question was not found, so it was counted as 0%"
-        )
-    else:
-        valid = {_norm(value) for value, _ in info["options"]}
-        matched = any(_norm(value) in valid for value in tried_values)
-
-        if not matched:
-            allowed = ", ".join(str(value) for value, _ in info["options"])
-            warnings.append(
-                f"{question_id}: answer '{sent}' is not one of [{allowed}], "
-                f"so it was counted as 0%"
-            )
-
-    return {
-        "type": kind,
-        "question_id": str(question_id),
-        "question_text": info.get("question_text") if info else None,
-        "answer_value": None if sent is None else str(sent),
-        "price_impact_percent": round(float(percent or 0), 2),
-        "matched": matched
-    }
-
-
-def _duplicate_warnings(question_ids, warnings):
-    counts = {}
-
-    for question_id in question_ids:
-        counts[question_id] = counts.get(question_id, 0) + 1
-
-    for question_id, count in counts.items():
-        if count > 1:
-            warnings.append(
-                f"{question_id} was answered {count} times and every answer was counted"
-            )
-
-
-def _price_from_percent(base_price, raw_percent, floor_price):
-    """
-    base price - deduction %, with two limits:
-      - the deduction is never more than MAX_DEDUCTION_PERCENT
-      - the price is never below the floor price
-    """
-    total_percent = min(raw_percent, MAX_DEDUCTION_PERCENT)
-    calculated_price = base_price * (1 - total_percent / 100)
-    final_price = max(floor_price, calculated_price)
-
-    cap_applied = raw_percent > MAX_DEDUCTION_PERCENT
-    floor_applied = calculated_price < floor_price
-
-    explanation = f"Deductions add up to {_num(raw_percent)}%. "
-
-    if cap_applied:
-        explanation += (
-            f"The limit is {MAX_DEDUCTION_PERCENT}%, "
-            f"so {MAX_DEDUCTION_PERCENT}% was used. "
-        )
-
-    explanation += (
-        f"{_num(base_price)} minus {_num(total_percent)}% "
-        f"is {_num(calculated_price)}. "
-    )
-
-    if floor_applied:
-        explanation += (
-            f"That is below the floor price {_num(floor_price)}, "
-            f"so the estimated price is {_num(final_price)}."
-        )
-    else:
-        explanation += f"The estimated price is {_num(final_price)}."
-
-    return {
-        "total_percent": total_percent,
-        "calculated_price": calculated_price,
-        "final_price": final_price,
-        "cap_applied": cap_applied,
-        "floor_applied": floor_applied,
-        "explanation": explanation
-    }
-
-
 # =========================================================
-# GRADE-WISE PRICING (ERP PRICE MASTER)
+# PRICING INPUTS (warranty status, device age, dead phone)
 # =========================================================
 def _take_pricing_inputs(payload):
     """
     The app answers the "Warranty" category like any other question:
         {"question_id": "WARRANTY_STATUS", "answer_value": "Out of Warranty"}
-        {"question_id": "DEVICE_AGE", "answer_value": "11+ months"}
+        {"question_id": "DEVICE_AGE", "answer_value": "7-11 Months"}
 
     Those two are not ERP questions. They are taken out of the answer list
     here, so they are not priced and not saved as answers, and are kept as
@@ -181,123 +67,163 @@ def _take_pricing_inputs(payload):
     return updated
 
 
-def _wants_grade_pricing(payload):
-    """Grade-wise pricing is used only when the client sends warranty or age."""
-    return (
-        payload.get("warranty_status") not in (None, "")
-        or payload.get("device_age_months") is not None
-    )
-
-
-def _answer_warranty(responses, options):
-    """Warranty status from the ERP's own warranty question, when it was answered."""
-    for r in responses:
-        info = (options or {}).get(r.get("question_id")) or {}
-
-        if gp.is_erp_warranty_question(info.get("question_code"), info.get("question_text")):
-            answer = gp.parse_warranty(r.get("answer_value"))
-            if answer is not None:
-                return answer
-
-    return None
-
-
-def _forced_grades(responses, options):
-    """[(question_id, answer, grade)] for answers the ERP marks with Forces Grade."""
-    forced = []
-
-    for r in responses:
-        info = (options or {}).get(r.get("question_id")) or {}
-        marks = info.get("forces_grade") or {}
-        grade = gp.parse_grade(marks.get(_norm(r.get("answer_value"))))
-
-        if grade:
-            forced.append((r.get("question_id"), _plain(r.get("answer_value")), grade))
-
-    return forced
-
-
-def _grade_price(payload, responses, options, raw_percent, warnings):
+def _band_inputs(payload, is_dead):
     """
-    The grade-wise price from the ERP Price Master.
-    Returns None when it cannot be used; the caller then uses the percent price.
+    (in_warranty, age_months) from the request. Both are required, as in
+    the ERP, except for a dead phone.
     """
-    try:
-        price_row = repo.get_price_row(payload["item_code"])
-    except Exception:
-        price_row = None
-
-    if not price_row:
-        warnings.append("Grade prices could not be read, so the percent price was used")
-        return None
-
-    sent_age = payload.get("device_age_months")
-    age = gp.parse_age_months(sent_age)
-
-    if sent_age not in (None, "") and age is None:
-        warnings.append(
-            f"device_age_months '{sent_age}' was not understood. "
-            f"Send the age in months, for example 14"
-        )
-
     sent_warranty = payload.get("warranty_status")
+    sent_age = payload.get("device_age_months")
+
     in_warranty = gp.parse_warranty(sent_warranty)
+    age = gp.resolve_age_months(sent_age)
 
-    if sent_warranty not in (None, "") and in_warranty is None:
-        warnings.append(
-            f"warranty_status '{sent_warranty}' was not understood. "
-            f"Send '{gp.IN_WARRANTY_TEXT}' or '{gp.OUT_OF_WARRANTY_TEXT}'"
-        )
+    problems = []
 
     if in_warranty is None:
-        in_warranty = _answer_warranty(responses, options)
+        if sent_warranty in (None, ""):
+            problems.append(
+                f"warranty_status is required ('{gp.IN_WARRANTY_TEXT}' or '{gp.OUT_OF_WARRANTY_TEXT}')"
+            )
+        else:
+            problems.append(
+                f"warranty_status '{sent_warranty}' was not understood. "
+                f"Send '{gp.IN_WARRANTY_TEXT}' or '{gp.OUT_OF_WARRANTY_TEXT}'"
+            )
 
-    if in_warranty is None and age is not None:
-        try:
-            months = repo.get_item_default_warranty_months(payload["item_code"])
-        except Exception:
-            months = None
+    if age is None:
+        if sent_age in (None, ""):
+            problems.append(
+                "device_age_months is required (the age in months, or the device age answer)"
+            )
+        else:
+            problems.append(
+                f"device_age_months '{sent_age}' was not understood. "
+                f"Send the age in months, for example 14, or the device age answer"
+            )
 
-        months = months or gp.DEFAULT_WARRANTY_MONTHS
-        in_warranty = age < months
+    if problems and not is_dead:
+        raise PriceError("; ".join(problems))
 
-        warnings.append(
-            f"warranty_status was not sent, so it was worked out from the age: "
-            f"{'in' if in_warranty else 'out of'} warranty "
-            f"(warranty period {gp.num(months)} months)"
-        )
+    return in_warranty, age
 
-    if in_warranty is None:
-        warnings.append(
-            "Warranty status and device age are both missing, "
-            "so the percent price was used"
-        )
+
+def _brand_family(item_code, request_brand):
+    """'Apple' or 'Android', from the ERP's model brand; from the request when the ERP has none."""
+    try:
+        family = repo.get_item_brand_family(item_code)
+    except Exception:
+        family = None
+
+    return family or gp.family_from_brand(request_brand)
+
+
+def _max_deduction_percent(warnings):
+    """Buyback Settings -> max_total_deduction_percent. None means the ERP default (100)."""
+    try:
+        return repo.get_buyback_setting("max_total_deduction_percent")
+    except Exception:
+        warnings.append("Buyback Settings could not be read, so the deduction limit 100% was used")
         return None
 
-    if in_warranty and age is None:
-        warnings.append(
-            "device_age_months was not sent, so the 6 to 11 months band was used"
-        )
 
-    result = gp.grade_price(
+# =========================================================
+# THE PRICE (shared by the three assessment APIs)
+# =========================================================
+def _price(payload, answers, diagnostics, warnings):
+    """
+    answers:     [{"question_id": ..., "answer_value": ...}]  ERP questions only
+    diagnostics: [{"test_code": ..., "result": ...}]
+
+    Returns (result, breakdown). Raises PriceError where the ERP would stop.
+    """
+    item_code = payload["item_code"]
+
+    price_row = repo.get_price_row(item_code)
+    if not price_row:
+        raise PriceError("Price not found")
+
+    is_dead = bool(payload.get("is_phone_dead"))
+    in_warranty, age = _band_inputs(payload, is_dead)
+
+    ids = [a.get("question_id") for a in answers] + [d.get("test_code") for d in diagnostics]
+    options = repo.get_question_options(ids) if ids else {}
+
+    items = [
+        ("question", a.get("question_id"), _plain(a.get("answer_value")), options.get(a.get("question_id")))
+        for a in answers
+    ]
+
+    for d in diagnostics:
+        # a test result "No" also matches a "Fail" option, and "Yes" a "Pass" option
+        values = _diagnostic_answer_values(_plain(d.get("result")))
+        info = options.get(d.get("test_code"))
+        chosen = next((value for value in values if gp.find_option(info, value)), values[0])
+        items.append(("diagnostic", d.get("test_code"), chosen, info))
+
+    result = gp.calculate(
         price_row,
-        raw_percent,
         in_warranty,
         age,
-        _forced_grades(responses, options),
-        MAX_DEDUCTION_PERCENT
+        items,
+        _brand_family(item_code, payload.get("brand")),
+        _max_deduction_percent(warnings),
+        is_dead,
+        item_code
     )
 
-    if result is None:
+    if result.get("error"):
+        raise PriceError(result["error"])
+
+    breakdown = []
+    counts = {}
+
+    for line in result["lines"]:
+        question_id = line["question_id"]
+        counts[question_id] = counts.get(question_id, 0) + 1
+
+        if not line["found"]:
+            warnings.append(f"{question_id}: this question was not found, so it was counted as 0%")
+        elif not line["matched"]:
+            allowed = ", ".join(str(option.get("value")) for option in options[question_id]["options"])
+            warnings.append(
+                f"{question_id}: answer '{line['answer_value']}' is not one of [{allowed}], "
+                f"so it was counted as 0%"
+            )
+
+        breakdown.append({
+            "type": line["type"],
+            "question_id": question_id,
+            "question_text": line["question_text"],
+            "answer_value": line["answer_value"],
+            "price_impact_percent": round(line["percent"], 2),
+            "amount": round(line["amount"], 2),
+            "matched": line["matched"],
+            "counted": line["counted"],
+            "fault_code": line["fault_code"]
+        })
+
+    for question_id, count in counts.items():
+        if count > 1:
+            warnings.append(
+                f"{question_id} was answered {count} times; only its largest deduction was counted"
+            )
+
+    dropped_faults = sorted({
+        line["fault_code"] for line in result["lines"]
+        if line["fault_code"] and line["amount"] and not line["counted"]
+        and counts.get(line["question_id"], 0) == 1
+    })
+    for fault_code in dropped_faults:
         warnings.append(
-            "This phone has no grade prices in the Price Master, "
-            "so the percent price was used"
+            f"Fault '{fault_code}' was reported by more than one answer; "
+            f"only the largest deduction was counted"
         )
 
-    return result
+    return result, breakdown
 
 
-def _save_grade_info(assessment_name, grade, warnings):
+def _save_grade_info(assessment_name, result, payload, warnings):
     """Writes grade, warranty and age on the assessment, in the ERP's own dropdown words."""
     try:
         selects = repo.get_doctype_select_options(
@@ -308,17 +234,17 @@ def _save_grade_info(assessment_name, grade, warnings):
         selects = {}
 
     values = {
-        "estimated_grade": gp.erp_grade_value(
-            selects.get("estimated_grade"), grade["grade"]
-        ),
-        "warranty_status": gp.erp_warranty_value(
-            selects.get("warranty_status"), grade["in_warranty"]
-        )
+        "estimated_grade": gp.erp_grade_value(selects.get("estimated_grade"), result["grade"])
     }
 
-    if grade["age_months"] is not None:
+    if result["in_warranty"] is not None:
+        values["warranty_status"] = gp.erp_warranty_value(
+            selects.get("warranty_status"), result["in_warranty"]
+        )
+
+    if result["age_months"] is not None:
         values["device_age_months"] = gp.erp_age_value(
-            selects.get("device_age_months"), grade["age_months"]
+            selects.get("device_age_months"), result["age_months"], payload.get("device_age_months")
         )
 
     try:
@@ -330,202 +256,83 @@ def _save_grade_info(assessment_name, grade, warnings):
         )
 
 
-def _build_result(payload, base_price, responses, options, response_percent,
-                  diagnostic_percent, breakdown, warnings, save):
-    """Shared end of API 1 and API 2: work out the price, save, build the reply."""
-    raw_percent = response_percent + (diagnostic_percent or 0)
+def _reply(assessment_name, result, breakdown, warnings, with_diagnostics):
+    base = result["base_price"]
+    percent_of_base = (lambda amount: round(amount / base * 100, 2) if base else 0.0)
 
-    # FLOOR (percent pricing)
-    floor_price = repo.get_floor_price(payload["item_code"])
-    if not floor_price or floor_price <= 0:
-        floor_price = base_price * 0.1
+    question_total = sum(line["amount"] for line in result["lines"] if line["counted"] and line["type"] == "question")
+    diagnostic_total = sum(line["amount"] for line in result["lines"] if line["counted"] and line["type"] == "diagnostic")
 
-    grade = None
-    if _wants_grade_pricing(payload):
-        grade = _grade_price(payload, responses, options, raw_percent, warnings)
-
-    if grade:
-        # GRADE-WISE: the price is one cell of the ERP grade table
-        price = grade
-        base_price = grade["base_price"]
-        floor_price = grade["floor_price"]
-    else:
-        # PERCENT: base price minus the deductions, with cap and floor
-        price = _price_from_percent(base_price, raw_percent, floor_price)
-
-    # SAVE
-    name = save(payload, price["final_price"])
-
-    if grade:
-        _save_grade_info(name, grade, warnings)
-
-    result = {
+    reply = {
         "success": True,
-        "assessment_name": name,
-        "base_price": round(base_price, 2),
-        "total_percent": round(price["total_percent"], 2),
-        "calculated_price": round(price["calculated_price"], 2),
-        "floor_price": round(floor_price, 2),
-        "estimated_price": round(price["final_price"], 2),
-        "raw_percent": round(raw_percent, 2),
-        "response_percent": round(response_percent, 2),
-        "cap_applied": price["cap_applied"],
-        "floor_applied": price["floor_applied"],
-        "price_explanation": price["explanation"],
-        "pricing_mode": "grade" if grade else "percent",
-        "estimated_grade": grade["grade"] if grade else None,
-        "price_band": grade["band"] if grade else None,
-        "price_band_label": grade["band_label"] if grade else None,
+        "assessment_name": assessment_name,
+        "base_price": round(base, 2),
+        "total_percent": percent_of_base(result["capped_total"]),
+        "calculated_price": round(result["calculated_price"], 2),
+        "floor_price": round(result["scrap_price"] or 0, 2),
+        "estimated_price": round(result["final_price"], 2),
+        "raw_percent": percent_of_base(result["raw_total"]),
+        "response_percent": percent_of_base(question_total),
+        "cap_applied": result["cap_applied"],
+        "floor_applied": result["is_scrap"],
+        "price_explanation": result["explanation"],
+        "pricing_mode": result["mode"],
+        "estimated_grade": result["grade"],
+        "price_band": result["band"],
+        "price_band_label": result["band_label"],
         "warranty_status": (
-            (gp.IN_WARRANTY_TEXT if grade["in_warranty"] else gp.OUT_OF_WARRANTY_TEXT)
-            if grade else None
+            None if result["in_warranty"] is None
+            else (gp.IN_WARRANTY_TEXT if result["in_warranty"] else gp.OUT_OF_WARRANTY_TEXT)
         ),
-        "device_age_months": grade["age_months"] if grade else None,
-        "grade_prices": grade["grade_prices"] if grade else None,
+        "device_age_months": result["age_months"],
+        "grade_prices": result["grade_prices"],
+        "total_deductions": round(result["capped_total"], 2),
+        "max_deduction_percent": result["max_percent"],
+        "is_scrap": result["is_scrap"],
+        "is_phone_dead": result["is_phone_dead"],
         "breakdown": breakdown,
         "warnings": warnings
     }
 
-    if diagnostic_percent is not None:
-        result["diagnostic_percent"] = round(diagnostic_percent, 2)
+    if with_diagnostics:
+        reply["diagnostic_percent"] = percent_of_base(diagnostic_total)
 
-    return result
+    return reply
+
+
+def _assess(payload, diagnostics, save):
+    """Shared body of API 1 and API 2: price, save, reply."""
+    payload = _take_pricing_inputs(payload)
+    warnings = []
+
+    try:
+        result, breakdown = _price(payload, payload.get("responses", []), diagnostics or [], warnings)
+    except PriceError as error:
+        return {"success": False, "message": str(error)}
+
+    name = save(payload, result["final_price"])
+    _save_grade_info(name, result, payload, warnings)
+
+    return _reply(name, result, breakdown, warnings, diagnostics is not None)
 
 
 # =========================================================
 # API 1: CREATE BASIC ASSESSMENT (RESPONSES ONLY)
 # =========================================================
 def create_buyback_service(payload: dict):
-
-    payload = _take_pricing_inputs(payload)
-
-    price_data = repo.get_base_price(payload["item_code"])
-
-    if not price_data or price_data.get("current_market_price") is None:
-        return {"success": False, "message": "Price not found"}
-
-    base_price = float(price_data["current_market_price"])
-
-    responses = payload.get("responses", [])
-    options = _load_question_options([r.get("question_id") for r in responses])
-
-    breakdown = []
-    warnings = []
-
-    if options is None:
-        warnings.append("Answer details could not be loaded, so the breakdown is empty")
-
-    # RESPONSE %
-    response_percent = 0
-
-    for r in responses:
-        percent = repo.get_price_percent(
-            r.get("question_id"),
-            r.get("answer_value")
-        )
-        response_percent += percent
-
-        if options is not None:
-            breakdown.append(_breakdown_item(
-                "question",
-                r.get("question_id"),
-                [r.get("answer_value")],
-                percent,
-                options,
-                warnings
-            ))
-
-    _duplicate_warnings([r.get("question_id") for r in responses], warnings)
-
-    return _build_result(
-        payload, base_price, responses, options, response_percent,
-        None, breakdown, warnings, repo.create_assessment
-    )
+    return _assess(payload, None, repo.create_assessment)
 
 
 # =========================================================
 # API 2: CREATE FULL ASSESSMENT (RESP + DIAGNOSTICS)
 # =========================================================
 def create_full_buyback_service(payload: dict):
-
-    payload = _take_pricing_inputs(payload)
-
-    price_data = repo.get_base_price(payload["item_code"])
-
-    if not price_data or price_data.get("current_market_price") is None:
-        return {"success": False, "message": "Price not found"}
-
-    base_price = float(price_data["current_market_price"])
-
-    responses = payload.get("responses", [])
-    diagnostics = payload.get("diagnostics", [])
-
-    options = _load_question_options(
-        [r.get("question_id") for r in responses]
-        + [d.get("test_code") for d in diagnostics]
-    )
-
-    breakdown = []
-    warnings = []
-
-    if options is None:
-        warnings.append("Answer details could not be loaded, so the breakdown is empty")
-
-    # RESPONSE %
-    response_percent = 0
-
-    for r in responses:
-        percent = repo.get_price_percent(
-            r.get("question_id"),
-            r.get("answer_value")
-        )
-        response_percent += percent
-
-        if options is not None:
-            breakdown.append(_breakdown_item(
-                "question",
-                r.get("question_id"),
-                [r.get("answer_value")],
-                percent,
-                options,
-                warnings
-            ))
-
-    # DIAGNOSTIC %
-    diagnostic_percent = 0
-
-    for d in diagnostics:
-        tried_values = _diagnostic_answer_values(d.get("result"))
-
-        percent = repo.get_price_percent_from_values(
-            d.get("test_code"),
-            tried_values
-        )
-
-        diagnostic_percent += percent
-
-        if options is not None:
-            breakdown.append(_breakdown_item(
-                "diagnostic",
-                d.get("test_code"),
-                tried_values,
-                percent,
-                options,
-                warnings
-            ))
-
-    _duplicate_warnings(
-        [r.get("question_id") for r in responses]
-        + [d.get("test_code") for d in diagnostics],
-        warnings
-    )
-
-    return _build_result(
-        payload, base_price, responses, options, response_percent,
-        diagnostic_percent, breakdown, warnings, repo.create_full_assessment
-    )
+    return _assess(payload, payload.get("diagnostics", []), repo.create_full_assessment)
 
 
+# =========================================================
+# MOBILE: SubmitBuybackQuestionAnswers
+# =========================================================
 def submit_mobile_buyback_answers_service(payload: dict):
     customer = repo.get_customer_for_assessment(payload["customer_id"])
     if not customer:
@@ -544,7 +351,6 @@ def submit_mobile_buyback_answers_service(payload: dict):
         }
 
     saved_answers = []
-    total_percent = 0
     pricing_inputs = {}
 
     for index, answer in enumerate(payload.get("answers", []), start=1):
@@ -578,91 +384,55 @@ def submit_mobile_buyback_answers_service(payload: dict):
                 "data": []
             }
 
-        percent = repo.get_price_percent(question["name"], answer["answer_value"])
-        total_percent += percent
-
         saved_answers.append({
             "question_name": question["name"],
             "question_code": question["question_code"],
             "question_text": question["question_text"],
             "answer_value": answer["answer_value"],
-            "price_impact_percent": percent
+            "price_impact_percent": repo.get_price_percent(question["name"], answer["answer_value"])
         })
 
-    raw_percent = total_percent
-    total_percent = min(total_percent, MAX_DEDUCTION_PERCENT)
-    base_price = float(item["current_market_price"])
-    calculated_price = base_price * (1 - total_percent / 100)
-    floor_price = float(item["d_grade_oow_11"] or 0)
-
-    if floor_price <= 0:
-        floor_price = base_price * 0.1
-
-    estimated_price = max(floor_price, calculated_price)
-
-    # GRADE-WISE: only when the Warranty category was answered
+    pricing_payload = {
+        "item_code": item["item_code"],
+        "brand": item.get("brand"),
+        "warranty_status": pricing_inputs.get("warranty"),
+        "device_age_months": pricing_inputs.get("age"),
+        "is_phone_dead": payload.get("is_phone_dead")
+    }
     warnings = []
-    grade = None
 
-    if pricing_inputs:
-        grade = _grade_price(
-            {
-                "item_code": payload["item_code"],
-                "warranty_status": pricing_inputs.get("warranty"),
-                "device_age_months": pricing_inputs.get("age")
-            },
-            [
-                {"question_id": a["question_name"], "answer_value": a["answer_value"]}
-                for a in saved_answers
-            ],
-            _load_question_options([a["question_name"] for a in saved_answers]),
-            raw_percent,
+    try:
+        result, breakdown = _price(
+            pricing_payload,
+            [{"question_id": a["question_name"], "answer_value": a["answer_value"]} for a in saved_answers],
+            [],
             warnings
         )
-
-    if grade:
-        base_price = grade["base_price"]
-        total_percent = grade["total_percent"]
-        calculated_price = grade["calculated_price"]
-        floor_price = grade["floor_price"]
-        estimated_price = grade["final_price"]
+    except PriceError as error:
+        return {
+            "success": False,
+            "message": str(error),
+            "data": []
+        }
 
     assessment_name = repo.create_mobile_answer_assessment(
         payload,
         customer,
         item,
         saved_answers,
-        estimated_price
+        result["final_price"]
     )
 
-    if grade:
-        _save_grade_info(assessment_name, grade, warnings)
+    _save_grade_info(assessment_name, result, pricing_payload, warnings)
 
     return {
         "success": True,
         "message": "Buyback answers submitted successfully",
-        "assessment_name": assessment_name,
+        **_reply(assessment_name, result, breakdown, warnings, False),
         "customer_id": customer["name"],
         "item_code": item["item_code"],
         "answer_count": len(saved_answers),
-        "base_price": round(base_price, 2),
-        "total_percent": round(total_percent, 2),
-        "calculated_price": round(calculated_price, 2),
-        "floor_price": round(floor_price, 2),
-        "final_price": round(estimated_price, 2),
-        "estimated_price": round(estimated_price, 2),
-        "pricing_mode": "grade" if grade else "percent",
-        "estimated_grade": grade["grade"] if grade else None,
-        "price_band": grade["band"] if grade else None,
-        "price_band_label": grade["band_label"] if grade else None,
-        "warranty_status": (
-            (gp.IN_WARRANTY_TEXT if grade["in_warranty"] else gp.OUT_OF_WARRANTY_TEXT)
-            if grade else None
-        ),
-        "device_age_months": grade["age_months"] if grade else None,
-        "grade_prices": grade["grade_prices"] if grade else None,
-        "price_explanation": grade["explanation"] if grade else None,
-        "warnings": warnings,
+        "final_price": round(result["final_price"], 2),
         "answers": saved_answers
     }
 
