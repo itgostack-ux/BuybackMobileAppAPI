@@ -28,19 +28,29 @@ class BuybackSelectedAnswer(BaseModel):
 class SubmitBuybackQuestionAnswersPayload(BaseModel):
     customer_id: str = Field(..., example="6374515589")
     item_code: str = Field(..., example="I08901")
-    imei_serial: str = Field(..., example="123456789012345")
+    imei_serial: Optional[str] = Field(
+        None, example="", description="Optional. Leave it empty when the IMEI is not known"
+    )
     source: Optional[str] = Field("Mobile App", example="Android")
     is_phone_dead: Optional[bool] = Field(
         False, description="True when the phone does not switch on: the Phone Dead price is used, grade F"
     )
     answers: List[BuybackSelectedAnswer] = Field(..., min_length=1)
 
-    @field_validator("customer_id", "item_code", "imei_serial")
+    @field_validator("customer_id", "item_code")
     @classmethod
     def validate_required_text(cls, value):
         if not value.strip():
             raise ValueError("value cannot be empty")
         return value.strip()
+
+    @field_validator("imei_serial", mode="before")
+    @classmethod
+    def clean_imei_serial(cls, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
 
 class SellNowPayload(BaseModel):

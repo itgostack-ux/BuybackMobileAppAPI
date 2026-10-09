@@ -36,7 +36,6 @@ def create_buyback_controller(payload: dict):
         "item_code",
         "item_name",
         "brand",
-        "imei_serial",
         "responses"
     ]
 
@@ -117,7 +116,6 @@ def create_full_buyback_controller(payload: dict):
         "item_code",
         "item_name",
         "brand",
-        "imei_serial",
         "responses",
         "diagnostics"
     ]
@@ -198,7 +196,6 @@ def submit_mobile_buyback_answers_controller(payload: dict):
     required_fields = [
         "customer_id",
         "item_code",
-        "imei_serial",
         "answers"
     ]
 

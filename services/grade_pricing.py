@@ -15,14 +15,17 @@ Buyback pricing, following the ERP's calculate_estimated_price.
        the band has no column for (D in the 0 to 3 months band) takes
        the price of the worst grade the band has.
     5. Deductions: every answer's percent of the BASE price (the Apple
-       percent for Apple phones). One deduction per fault: when the
-       same fault is reported twice, only the largest deduction counts.
-    6. Cap: Buyback Settings "max_total_deduction_percent", 100 when empty.
-    7. Floor: the scrap price, when the Price Master has one. A phone
+       percent for Apple phones; a question for the other brand family
+       costs nothing). One deduction per fault: when the same fault is
+       reported twice, only the largest deduction counts.
+    6. Pricing rules: every Buyback Pricing Rule that fits the phone
+       (brand, item group, grade, warranty, age) adds its deduction:
+       a flat amount, a percent of the base price, or a slab percent.
+    7. Cap: Buyback Settings "max_total_deduction_percent", 100 when empty.
+    8. Floor: the scrap price, when the Price Master has one. A phone
        priced at scrap gets grade E.
 
-This module has no database code. The ERP's pricing rules
-(_apply_pricing_rules) are not included.
+This module has no database code.
 """
 import re
 
@@ -64,6 +67,17 @@ def _key(value):
     return str(value if value is not None else "").strip().lower()
 
 
+def _blank(value):
+    return _key(value) in ("", "any", "all")
+
+
+def _number(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------- inputs
 def parse_warranty(value):
     """True = in warranty, False = out of warranty, None = not understood."""
@@ -99,8 +113,8 @@ def resolve_age_months(value):
     Age in months as a number, like the ERP's _resolve_age_months.
 
     A number is used as it is (14, "14"). A range answer gives its
-    middle: "7-11 Months" -> 9, "0-3 Months" -> 1.5. "12+ Months" gives
-    one more than the limit: 13. "Up to 3 months" -> 3.
+    middle, rounded up: "0-3 Months" -> 2, "4-6 Months" -> 5,
+    "7-11 Months" -> 9. "12+ Months" gives 14. "Up to 3 months" -> 3.
     None when it was not sent or not understood.
     """
     if value is None or value == "":
@@ -118,11 +132,11 @@ def resolve_age_months(value):
             return None
 
         if len(numbers) >= 2:
-            age = (numbers[0] + numbers[1]) / 2        # a range: its middle
+            age = float(int((numbers[0] + numbers[1]) / 2 + 0.5))     # a range: its middle, rounded up
         elif "+" in text or any(word in text for word in ("more", "above", "over")):
-            age = numbers[0] + 1                       # "12+", "more than 11"
+            age = numbers[0] + 2                                      # "12+", "more than 12"
         else:
-            age = numbers[0]                           # "up to 3 months", "9 months"
+            age = numbers[0]                                          # "up to 3 months", "9 months"
 
     # also false for "nan" and "inf", which float() accepts
     return age if 0 <= age <= MAX_AGE_MONTHS else None
@@ -151,6 +165,25 @@ def family_from_brand(brand):
     return APPLE_FAMILY if "apple" in text or "iphone" in text else ANDROID_FAMILY
 
 
+def family_allowed(applies_to, family):
+    """
+    The ERP's applies_to_brand_family check on a question: "Any" or empty
+    means every phone; otherwise the question only costs on its own family.
+    """
+    only = _key(applies_to)
+
+    if only in ("", "any"):
+        return True
+
+    if only in ("apple", "ios", "iphone"):
+        return family == APPLE_FAMILY
+
+    if only == "android":
+        return family == ANDROID_FAMILY
+
+    return False
+
+
 # ---------------------------------------------------------------- band and prices
 def resolve_band(in_warranty, age_months):
     """The Price Master band, exactly as the ERP's _resolve_bucket."""
@@ -171,11 +204,7 @@ def column(grade, band):
 
 def cell_price(price_row, grade, band):
     """One cell of the Price Master. None when it is empty or zero."""
-    try:
-        value = float((price_row or {}).get(column(grade, band)) or 0)
-    except (TypeError, ValueError):
-        return None
-
+    value = _number((price_row or {}).get(column(grade, band)))
     return value if value > 0 else None
 
 
@@ -210,25 +239,10 @@ def base_price(price_row, grade, band):
     return cell_price(price_row, used, band), used
 
 
-def special_price(price_row, kind, band):
-    """
-    The scrap price or the Phone Dead price (kind = "scrap_price" or
-    "phone_dead_price"): a band column when the Price Master has one,
-    else the plain column. None when it is empty or zero.
-    """
-    names = [f"{kind}_{band}"] if band else []
-    names.append(kind)
-
-    for name in names:
-        try:
-            value = float((price_row or {}).get(name) or 0)
-        except (TypeError, ValueError):
-            continue
-
-        if value > 0:
-            return value
-
-    return None
+def special_price(price_row, kind):
+    """The scrap price or the Phone Dead price (kind = "scrap_price" / "phone_dead_price"), None when empty."""
+    value = _number((price_row or {}).get(kind))
+    return value if value > 0 else None
 
 
 # ---------------------------------------------------------------- grade
@@ -251,7 +265,7 @@ def grade_from_answers(answers):
     for question_id, answer, info in answers:
         info = info or {}
 
-        if not info.get("grading", True):
+        if info.get("disabled") or not info.get("grading", True):
             continue
 
         grade = parse_grade((info.get("forces_grade") or {}).get(_key(answer)))
@@ -279,17 +293,27 @@ def find_option(info, answer):
 
 def rate_for_family(option, family):
     """The Apple percent for Apple phones when it is set, else the standard percent."""
-    if family == APPLE_FAMILY and option.get("apple_percent"):
-        return float(option["apple_percent"])
+    if family == APPLE_FAMILY and _number(option.get("apple_percent")):
+        return _number(option["apple_percent"])
 
-    return float(option.get("percent") or 0)
+    return _number(option.get("percent"))
 
 
 def deduction_line(kind, question_id, answer, info, base, family):
-    """One answer as a deduction line, like the ERP's _get_question_deduction."""
+    """
+    One answer as a deduction line, like the ERP's _get_question_deduction.
+    "skipped" says why a valid answer costs nothing: "disabled" or "family".
+    """
     option = find_option(info, answer)
-    percent = abs(rate_for_family(option, family)) if option else 0.0
-    fault_code = (option or {}).get("fault_code")
+    skipped = None
+
+    if option is not None and (info or {}).get("disabled"):
+        skipped = "disabled"
+    elif option is not None and not family_allowed((info or {}).get("brand_family"), family):
+        skipped = "family"
+
+    percent = abs(rate_for_family(option, family)) if option and not skipped else 0.0
+    fault_code = _key((info or {}).get("fault_code") or (option or {}).get("fault_code"))
 
     return {
         "type": kind,
@@ -298,9 +322,10 @@ def deduction_line(kind, question_id, answer, info, base, family):
         "answer_value": None if answer is None else str(getattr(answer, "value", answer)),
         "found": info is not None,
         "matched": option is not None,
+        "skipped": skipped,
         "percent": percent,
         "amount": abs(base * percent / 100) if percent else 0.0,
-        "fault_code": fault_code,
+        "fault_code": fault_code or None,
         # one deduction per fault: the same fault code, or the same question
         "key": f"fault:{fault_code}" if fault_code else f"question:{question_id}",
         "counted": False,
@@ -323,24 +348,131 @@ def keep_largest(lines):
 
 def clamp(total, base, max_percent):
     """(capped total, limit used), like the ERP's _clamp_deductions."""
-    try:
-        percent = float(max_percent or 0) or DEFAULT_MAX_DEDUCTION_PERCENT
-    except (TypeError, ValueError):
-        percent = DEFAULT_MAX_DEDUCTION_PERCENT
-
+    percent = _number(max_percent) or DEFAULT_MAX_DEDUCTION_PERCENT
     percent = max(0.0, min(percent, 100.0))
     return min(total, base * percent / 100.0), percent
 
 
+# ---------------------------------------------------------------- pricing rules
+# A Buyback Pricing Rule fits a phone when every filter it has a value for
+# matches. These are the filter columns looked for on the rule row.
+RULE_GRADE_COLUMNS = ("grade", "grade_letter", "applies_to_grade")
+RULE_WARRANTY_COLUMNS = ("warranty_status",)
+RULE_AGE_RANGES = (
+    ("min_age_months", "max_age_months"), ("from_age_months", "to_age_months"),
+    ("min_device_age_months", "max_device_age_months"), ("device_age_from", "device_age_to"),
+    ("age_from", "age_to"),
+)
+RULE_AGE_TEXT_COLUMNS = ("device_age_months", "device_age", "age_band")
+
+
+def age_in_text(text, age_months):
+    """True when an age falls in a text such as '7-11 Months', '12+ Months', 'Up to 3 months' or '9'."""
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text or "")]
+    lower = str(text or "").lower()
+
+    if not numbers:
+        return False
+
+    if len(numbers) >= 2:
+        return numbers[0] <= age_months <= numbers[1]
+
+    limit = numbers[0]
+    more = "+" in lower or ">" in lower or any(w in lower for w in ("above", "more", "over"))
+    less = "<" in lower or any(w in lower for w in ("below", "less", "under", "up to", "upto"))
+
+    if more:
+        return age_months >= limit
+    if less:
+        return age_months <= limit
+    return limit == age_months
+
+
+def rule_applies(row, brand, item_group, grade, in_warranty, age_months):
+    """Whether one Buyback Pricing Rule row fits this phone."""
+    for column_name, value in (("brand", brand), ("item_group", item_group)):
+        if not _blank(row.get(column_name)) and _key(row[column_name]) != _key(value):
+            return False
+
+    for column_name in RULE_GRADE_COLUMNS:
+        wanted = parse_grade(row.get(column_name)) if not _blank(row.get(column_name)) else None
+        if wanted and wanted != grade:
+            return False
+
+    for column_name in RULE_WARRANTY_COLUMNS:
+        wanted = parse_warranty(row.get(column_name)) if not _blank(row.get(column_name)) else None
+        if wanted is not None and wanted != bool(in_warranty):
+            return False
+
+    for low, high in RULE_AGE_RANGES:
+        if _number(row.get(low)) > 0 and age_months < _number(row.get(low)):
+            return False
+        if _number(row.get(high)) > 0 and age_months > _number(row.get(high)):
+            return False
+
+    for column_name in RULE_AGE_TEXT_COLUMNS:
+        if not _blank(row.get(column_name)) and not age_in_text(str(row[column_name]), age_months):
+            return False
+
+    return True
+
+
+def rule_amount(row, slabs, base):
+    """The rule's deduction, exactly as the ERP's calculate_deduction."""
+    kind = _key(row.get("rule_type"))
+
+    if kind == "flat deduction":
+        return _number(row.get("flat_deduction"))
+
+    if kind == "percentage deduction":
+        return base * _number(row.get("percent_deduction")) / 100
+
+    if kind == "slab-based" and slabs:
+        for slab in sorted(slabs, key=lambda s: _number(s.get("from_amount"))):
+            if _number(slab.get("from_amount")) <= base <= _number(slab.get("to_amount")):
+                return base * _number(slab.get("deduction_percent")) / 100
+        return 0.0
+
+    return 0.0
+
+
+def rule_line(rule, base):
+    """A pricing rule as a deduction line, or None when it deducts nothing."""
+    row = rule.get("row") or {}
+    amount = rule_amount(row, rule.get("slabs") or [], base)
+
+    if not amount:
+        return None
+
+    name = str(row.get("name") or "")
+    label = row.get("rule_name") or row.get("title") or name
+
+    return {
+        "type": "rule",
+        "question_id": name,
+        "question_text": str(label),
+        "answer_value": row.get("rule_type"),
+        "found": True,
+        "matched": True,
+        "skipped": None,
+        "percent": amount / base * 100 if base else 0.0,
+        "amount": amount,
+        "fault_code": None,
+        "key": f"rule:{name}",
+        "counted": True,
+    }
+
+
 # ---------------------------------------------------------------- the whole calculation
 def calculate(price_row, in_warranty, age_months, items, family, max_percent,
-              is_phone_dead=False, item_code=""):
+              is_phone_dead=False, item_code="", rules=None, brand=None, item_group=None):
     """
     The ERP's calculate_estimated_price for one phone.
 
     items: [(kind, question_id, answer_value, info)] for the answered ERP
            questions ("question") and tests ("diagnostic"); info is the
            question's data from the repository, None when not found.
+    rules: the ERP's active Buyback Pricing Rules, from the repository.
 
     Returns a dict with the price and every step, or {"error": text}
     where the ERP would stop with an error.
@@ -378,7 +510,7 @@ def calculate(price_row, in_warranty, age_months, items, family, max_percent,
 
     # 1. dead phone: its own price, grade F, nothing else is calculated
     if is_phone_dead:
-        dead_price = special_price(price_row, "phone_dead_price", band)
+        dead_price = special_price(price_row, "phone_dead_price")
 
         if not dead_price:
             return {"error": f"No Phone Dead price is configured for {item_code}"}
@@ -428,15 +560,15 @@ def calculate(price_row, in_warranty, age_months, items, family, max_percent,
     lines = keep_largest([deduction_line(kind, qid, answer, info, base, family) for kind, qid, answer, info in items])
     counted = [line for line in lines if line["counted"]]
     dropped = [line for line in lines if line["amount"] and not line["counted"]]
-    raw_total = sum(line["amount"] for line in counted)
+    answer_total = sum(line["amount"] for line in counted)
 
     if counted:
         explanation += (
-            f"Deductions: {num(raw_total / base * 100)}% of {num(base)} = {num(raw_total)} "
+            f"Deductions: {num(answer_total / base * 100)}% of {num(base)} = {num(answer_total)} "
             f"({len(counted)} answer{'' if len(counted) == 1 else 's'}). "
         )
     else:
-        explanation += "No deductions. "
+        explanation += "No deductions from the answers. "
 
     if dropped:
         explanation += (
@@ -444,7 +576,24 @@ def calculate(price_row, in_warranty, age_months, items, family, max_percent,
             f"because the same fault was already counted. "
         )
 
-    # 6. cap
+    # 6. pricing rules on top
+    rule_lines = [
+        line for line in (
+            rule_line(rule, base) for rule in (rules or [])
+            if rule_applies(rule.get("row") or {}, brand, item_group, grade, in_warranty, age_months)
+        )
+        if line
+    ]
+    lines.extend(rule_lines)
+    rule_total = sum(line["amount"] for line in rule_lines)
+
+    if rule_lines:
+        names = ", ".join(line["question_text"] for line in rule_lines)
+        explanation += f"Pricing rule{'' if len(rule_lines) == 1 else 's'} {names}: {num(rule_total)} more. "
+
+    raw_total = answer_total + rule_total
+
+    # 7. cap
     capped_total, percent_limit = clamp(raw_total, base, max_percent)
     cap_applied = raw_total > capped_total
 
@@ -457,8 +606,8 @@ def calculate(price_row, in_warranty, age_months, items, family, max_percent,
     calculated = base - capped_total
     explanation += f"{num(base)} minus {num(capped_total)} is {num(calculated)}. "
 
-    # 7. floor at the scrap price
-    scrap = special_price(price_row, "scrap_price", band)
+    # 8. floor at the scrap price
+    scrap = special_price(price_row, "scrap_price")
     is_scrap = bool(scrap) and calculated < scrap
     final = scrap if is_scrap else calculated
 
@@ -478,6 +627,7 @@ def calculate(price_row, in_warranty, age_months, items, family, max_percent,
         "lines": lines,
         "base_price": base,
         "raw_total": raw_total,
+        "rule_total": rule_total,
         "capped_total": capped_total,
         "max_percent": percent_limit,
         "cap_applied": cap_applied,
@@ -526,23 +676,8 @@ def erp_age_value(options, age_months, sent=None):
             return option
 
     for option in options or []:
-        numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", option)]
-        text = option.lower()
-
-        if len(numbers) >= 2 and numbers[0] <= age_months <= numbers[1]:
+        if age_in_text(option, age_months):
             return option
-
-        if len(numbers) == 1:
-            limit = numbers[0]
-            more = "+" in option or ">" in option or any(w in text for w in ("above", "more", "over"))
-            less = "<" in option or any(w in text for w in ("below", "less", "under", "up to", "upto"))
-
-            if more and age_months >= limit:
-                return option
-            if less and age_months <= limit:
-                return option
-            if not more and not less and limit == age_months:
-                return option
 
     return str(int(round(age_months)))
 

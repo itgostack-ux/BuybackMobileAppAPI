@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict
 from enum import Enum
 
@@ -35,7 +35,9 @@ class BuybackRequest(BaseModel):
     item_code: str
     item_name: str
     brand: str
-    imei_serial: str
+    imei_serial: Optional[str] = Field(
+        None, example="", description="Optional. Leave it empty when the IMEI is not known"
+    )
 
     source: Optional[str] = "Web"
     company: Optional[str] = None
@@ -56,6 +58,14 @@ class BuybackRequest(BaseModel):
     )
 
     responses: List[ResponseItem] = Field(..., min_items=1)
+
+    @field_validator("imei_serial", mode="before")
+    @classmethod
+    def clean_imei_serial(cls, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
 
 class FullBuybackRequest(BuybackRequest):
@@ -112,6 +122,7 @@ class BuybackCreateResponse(BaseModel):
     device_age_months: Optional[float] = None
     grade_prices: Optional[Dict[str, Optional[float]]] = None
     total_deductions: Optional[float] = None
+    rule_deductions: Optional[float] = Field(None, description="The part of total_deductions that comes from Buyback Pricing Rules")
     max_deduction_percent: Optional[float] = None
     is_scrap: Optional[bool] = None
     is_phone_dead: Optional[bool] = None

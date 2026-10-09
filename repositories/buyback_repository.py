@@ -208,6 +208,7 @@ class BuybackRepository:
             return f"NULL AS {alias}"
 
         has_purpose = "question_purpose" in bank_columns
+        fault_from_bank = "fault_code" in bank_columns          # one fault code per question
         marks = ", ".join(["%s"] * len(question_ids))
 
         with get_db_connection() as conn:
@@ -223,8 +224,10 @@ class BuybackRepository:
                     opt.price_impact_percent,
                     {pick("apple_percent", ("opt", "price_impact_percent_apple"))},
                     {pick("forces_grade", ("opt", "forces_grade"))},
-                    {pick("fault_code", ("opt", "fault_code"), ("qb", "fault_code"))},
-                    {pick("question_purpose", ("qb", "question_purpose"))}
+                    {pick("fault_code", ("qb", "fault_code"), ("opt", "fault_code"))},
+                    {pick("question_purpose", ("qb", "question_purpose"))},
+                    {pick("brand_family", ("qb", "applies_to_brand_family"))},
+                    {pick("disabled", ("qb", "disabled"))}
                 FROM `tabBuyback Question Option` opt
                 LEFT JOIN `tabBuyback Question Bank` qb
                     ON qb.name = opt.parent
@@ -243,6 +246,12 @@ class BuybackRepository:
                         "question_text": row.get("question_text"),
                         "question_code": row.get("question_code"),
                         "grading": (not has_purpose) or purpose == "grading",
+                        "brand_family": row.get("brand_family"),
+                        "disabled": bool(row.get("disabled")),
+                        "fault_code": (
+                            (str(row.get("fault_code") or "").strip() or None)
+                            if fault_from_bank else None
+                        ),
                         "forces_grade": {},
                         "options": []
                     }
@@ -300,13 +309,20 @@ class BuybackRepository:
 
         return row["value"] if row else None
 
-    def get_item_brand_family(self, item_code):
-        """'Apple' or 'Android' from the model's brand, or None when the item is unknown."""
+    def get_item_pricing_context(self, item_code):
+        """
+        {"brand", "item_group", "family"} of an item, for the pricing rules
+        and the brand family ('Apple' or 'Android'). None when the item is unknown.
+        """
+        item_columns = self.get_table_columns("tabItem")
+        group_columns = [c for c in ("item_group", "ch_item_group_id") if c in item_columns]
+        group_sql = ", ".join(f"i.{c}" for c in group_columns) or "NULL AS item_group"
+
         with get_db_connection() as conn:
             cursor = conn.cursor(DictCursor)
 
-            cursor.execute("""
-                SELECT m.brand
+            cursor.execute(f"""
+                SELECT m.brand, {group_sql}
                 FROM tabItem i
                 LEFT JOIN `tabCH Model` m
                     ON m.model_id = i.ch_model_id
@@ -319,7 +335,93 @@ class BuybackRepository:
         if not row:
             return None
 
-        return "Apple" if "apple" in str(row.get("brand") or "").lower() else "Android"
+        brand = row.get("brand")
+        item_group = next((row[c] for c in group_columns if row.get(c)), None)
+
+        return {
+            "brand": brand,
+            "item_group": item_group,
+            "family": "Apple" if "apple" in str(brand or "").lower() else "Android"
+        }
+
+    PRICING_RULE_TABLES = ("tabBuyback Pricing Rule", "tabBuyback Price Rule")
+
+    def get_pricing_rules(self):
+        """
+        The active rows of the ERP's Buyback Pricing Rule table, each with
+        its slabs:
+            [{"row": {column: value, ...},
+              "slabs": [{"from_amount", "to_amount", "deduction_percent"}, ...]}, ...]
+        [] when the ERP has no such table or no active rule.
+        """
+        table = None
+        columns = set()
+
+        for candidate in self.PRICING_RULE_TABLES:
+            columns = self.get_table_columns(candidate)
+            if columns:
+                table = candidate
+                break
+
+        if not table:
+            return []
+
+        conditions = ["docstatus < 2"]
+
+        if "disabled" in columns:
+            conditions.append("IFNULL(disabled, 0) = 0")
+
+        for flag in ("is_active", "enabled", "active"):
+            if flag in columns:
+                conditions.append(f"{flag} = 1")
+
+        order = "priority, name" if "priority" in columns else "name"
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(DictCursor)
+
+            cursor.execute(f"""
+                SELECT *
+                FROM `{table}`
+                WHERE {" AND ".join(conditions)}
+                ORDER BY {order}
+            """)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return []
+
+            # the slabs live in a child table with these four columns
+            cursor.execute("""
+                SELECT table_name
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND column_name IN ('parent', 'from_amount', 'to_amount', 'deduction_percent')
+                GROUP BY table_name
+                HAVING COUNT(DISTINCT column_name) = 4
+            """)
+
+            slab_tables = [r["table_name"] for r in cursor.fetchall()]
+            names = tuple(r["name"] for r in rows)
+            marks = ", ".join(["%s"] * len(names))
+            slabs = {}
+
+            for slab_table in slab_tables:
+                cursor.execute(f"""
+                    SELECT parent, from_amount, to_amount, deduction_percent
+                    FROM `{slab_table}`
+                    WHERE parent IN ({marks})
+                    ORDER BY parent, idx
+                """, names)
+
+                for r in cursor.fetchall():
+                    slabs.setdefault(r["parent"], []).append({
+                        "from_amount": float(r["from_amount"] or 0),
+                        "to_amount": float(r["to_amount"] or 0),
+                        "deduction_percent": float(r["deduction_percent"] or 0)
+                    })
+
+        return [{"row": row, "slabs": slabs.get(row["name"], [])} for row in rows]
 
     def get_doctype_select_options(self, doctype, fieldnames):
         """{fieldname: [option, ...]} for the dropdown (Select) fields of an ERP document type."""
@@ -601,7 +703,7 @@ class BuybackRepository:
                 payload["item_code"],
                 payload["item_name"],
                 payload["brand"],
-                payload["imei_serial"],
+                payload.get("imei_serial"),
                 estimated_price
             ))
 
@@ -657,7 +759,7 @@ class BuybackRepository:
                 payload["item_code"],
                 payload["item_name"],
                 payload["brand"],
-                payload["imei_serial"],
+                payload.get("imei_serial"),
                 estimated_price
             ))
 
@@ -736,7 +838,7 @@ class BuybackRepository:
                 item["item_code"],
                 item["item_name"],
                 item.get("brand"),
-                payload["imei_serial"],
+                payload.get("imei_serial"),
                 payload.get("source") or "Mobile App",
                 estimated_price
             ))

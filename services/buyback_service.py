@@ -108,14 +108,30 @@ def _band_inputs(payload, is_dead):
     return in_warranty, age
 
 
-def _brand_family(item_code, request_brand):
-    """'Apple' or 'Android', from the ERP's model brand; from the request when the ERP has none."""
+def _item_context(item_code, payload):
+    """
+    (brand, item_group, family) of the phone: from the ERP item when it is
+    known, else from the request. The family is 'Apple' or 'Android'.
+    """
     try:
-        family = repo.get_item_brand_family(item_code)
+        context = repo.get_item_pricing_context(item_code) or {}
     except Exception:
-        family = None
+        context = {}
 
-    return family or gp.family_from_brand(request_brand)
+    brand = context.get("brand") or payload.get("brand")
+    item_group = context.get("item_group") or payload.get("item_group")
+    family = context.get("family") or gp.family_from_brand(brand)
+
+    return brand, item_group, family
+
+
+def _pricing_rules(warnings):
+    """The ERP's active Buyback Pricing Rules. [] with a warning when they cannot be read."""
+    try:
+        return repo.get_pricing_rules()
+    except Exception:
+        warnings.append("Buyback Pricing Rules could not be read, so none were applied")
+        return []
 
 
 def _max_deduction_percent(warnings):
@@ -161,15 +177,20 @@ def _price(payload, answers, diagnostics, warnings):
         chosen = next((value for value in values if gp.find_option(info, value)), values[0])
         items.append(("diagnostic", d.get("test_code"), chosen, info))
 
+    brand, item_group, family = _item_context(item_code, payload)
+
     result = gp.calculate(
         price_row,
         in_warranty,
         age,
         items,
-        _brand_family(item_code, payload.get("brand")),
+        family,
         _max_deduction_percent(warnings),
         is_dead,
-        item_code
+        item_code,
+        rules=[] if is_dead else _pricing_rules(warnings),
+        brand=brand,
+        item_group=item_group
     )
 
     if result.get("error"):
@@ -189,6 +210,12 @@ def _price(payload, answers, diagnostics, warnings):
             warnings.append(
                 f"{question_id}: answer '{line['answer_value']}' is not one of [{allowed}], "
                 f"so it was counted as 0%"
+            )
+        elif line.get("skipped") == "disabled":
+            warnings.append(f"{question_id}: this question is disabled in the ERP, so it was counted as 0%")
+        elif line.get("skipped") == "family":
+            warnings.append(
+                f"{question_id}: this question is for the other brand family, so it was counted as 0%"
             )
 
         breakdown.append({
@@ -287,6 +314,7 @@ def _reply(assessment_name, result, breakdown, warnings, with_diagnostics):
         "device_age_months": result["age_months"],
         "grade_prices": result["grade_prices"],
         "total_deductions": round(result["capped_total"], 2),
+        "rule_deductions": round(result.get("rule_total") or 0.0, 2),
         "max_deduction_percent": result["max_percent"],
         "is_scrap": result["is_scrap"],
         "is_phone_dead": result["is_phone_dead"],
@@ -395,6 +423,7 @@ def submit_mobile_buyback_answers_service(payload: dict):
     pricing_payload = {
         "item_code": item["item_code"],
         "brand": item.get("brand"),
+        "item_group": item.get("item_group"),
         "warranty_status": pricing_inputs.get("warranty"),
         "device_age_months": pricing_inputs.get("age"),
         "is_phone_dead": payload.get("is_phone_dead")
